@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Preview__preview_start",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(netstat -ano)",
+      "Bash(node -c js/biome.js)",
+      "Bash(node -c js/game.js)",
+      "Bash(for f in js/*.js)",
+      "Bash(do echo -n \"$f: \")",
+      "Bash(node -c \"$f\")",
+      "Bash(done)",
+      "Bash(node -c js/music.js)",
+      "Bash(do echo:*)",
+      "Bash(echo \"FAIL: $f\")",
+      "Bash(node -c js/stickman.js)",
+      "Bash(node -c js/entity.js)",
+      "Bash(node -c js/constants.js)",
+      "Bash(node -c js/currency.js)",
+      "Bash(node -c js/player.js)",
+      "Bash(node -c js/ai.js)",
+      "Bash(node -c js/boss.js)",
+      "Bash(node -c js/minimap.js)",
+      "Bash(node -c js/hud.js)",
+      "Bash(node -c C:/Users/Evan/code/stickman-wars/js/biome.js)",
+      "Bash(where gh:*)",
+      "Bash(cmd //c \"where gh\")",
+      "Bash(winget install:*)",
+      "Bash(export PATH=\"$PATH:/c/Program Files/GitHub CLI\")",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" auth status)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" auth login --web)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}
