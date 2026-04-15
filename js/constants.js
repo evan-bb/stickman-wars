@@ -90,32 +90,32 @@ const AI_COOLDOWN_PENALTY = 1.2; // 20% slower than player
 // Boss config
 const BOSS_CONFIG = {
     name: 'Luca the Spider',
-    health: 500,
-    damage: 30,
-    speed: 90,
-    lungeSpeed: 250,
-    webSpeed: 200,
+    health: 300,
+    damage: 15,
+    speed: 80,
+    lungeSpeed: 220,
+    webSpeed: 180,
     phase2Threshold: 0.5
 };
 
 const GHOST_BOSS_CONFIG = {
     name: 'James the Ghost',
-    health: 400,
-    damage: 25,
-    speed: 80,
-    boltSpeed: 220,
-    teleportCooldown: 3.0,
-    wailRadius: 120,
+    health: 250,
+    damage: 12,
+    speed: 70,
+    boltSpeed: 190,
+    teleportCooldown: 3.5,
+    wailRadius: 100,
     phase2Threshold: 0.5
 };
 
 const CRAB_BOSS_CONFIG = {
     name: 'Charlie the Crab',
-    health: 450,
-    damage: 28,
-    speed: 70,
-    chargeSpeed: 280,
-    bubbleSpeed: 180,
+    health: 280,
+    damage: 14,
+    speed: 60,
+    chargeSpeed: 240,
+    bubbleSpeed: 160,
     phase2Threshold: 0.5
 };
 
