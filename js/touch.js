@@ -29,8 +29,8 @@ class TouchControls {
         };
 
         // Button zones (canvas coordinates)
-        this.interactBtn = { x: CANVAS_WIDTH - 90, y: CANVAS_HEIGHT - 180, r: 35 };
-        this.sprintBtn = { x: 90, y: CANVAS_HEIGHT - 180, r: 35 };
+        this.interactBtn = { x: CANVAS_WIDTH - 80, y: CANVAS_HEIGHT - 180, r: 32 };
+        this.sprintBtn = { x: 200, y: CANVAS_HEIGHT - 300, r: 28 };
 
         // Track interact/sprint state
         this.interactPressed = false;
@@ -232,18 +232,29 @@ class TouchControls {
             ctx.fill();
         } else {
             // Show joystick hint area
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+            const hintX = 130, hintY = CANVAS_HEIGHT - 150;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
             ctx.beginPath();
-            ctx.arc(160, CANVAS_HEIGHT - 160, 60, 0, Math.PI * 2);
+            ctx.arc(hintX, hintY, 65, 0, Math.PI * 2);
             ctx.fill();
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.lineWidth = 2;
             ctx.stroke();
 
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-            ctx.font = '11px Arial';
+            // Crosshair lines inside the circle
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(hintX, hintY - 25);
+            ctx.lineTo(hintX, hintY + 25);
+            ctx.moveTo(hintX - 25, hintY);
+            ctx.lineTo(hintX + 25, hintY);
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.font = 'bold 13px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText('MOVE', 160, CANVAS_HEIGHT - 155);
+            ctx.fillText('MOVE', hintX, hintY + 4);
         }
 
         // Attack indicator on right side
