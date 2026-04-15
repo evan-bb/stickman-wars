@@ -71,7 +71,7 @@ class Game {
         this.storm = {
             active: false,
             phase: 0,
-            radius: Math.max(WORLD_WIDTH, WORLD_HEIGHT), // starts huge
+            radius: 2200,
             targetRadius: Math.max(WORLD_WIDTH, WORLD_HEIGHT),
             centerX: STORM_CONFIG.centerX,
             centerY: STORM_CONFIG.centerY,
@@ -442,7 +442,7 @@ class Game {
         this.storm = {
             active: false,
             phase: 0,
-            radius: Math.max(WORLD_WIDTH, WORLD_HEIGHT),
+            radius: 2200,
             targetRadius: Math.max(WORLD_WIDTH, WORLD_HEIGHT),
             centerX: STORM_CONFIG.centerX,
             centerY: STORM_CONFIG.centerY,
@@ -814,9 +814,10 @@ class Game {
         // Check if it's time for the storm to start or shrink
         if (this.gameTime >= s.nextShrinkTime && s.phase <= STORM_CONFIG.shrinkPhases) {
             if (!s.active) {
-                // Storm just appeared
+                // Storm just appeared — radius must be smaller than world diagonal
+                // so edges of the map are immediately dangerous
                 s.active = true;
-                s.radius = Math.max(WORLD_WIDTH, WORLD_HEIGHT) * 0.9;
+                s.radius = 2200;
                 this.hud.notify('The storm is closing in!', '#AA44FF', 3);
             }
 
@@ -825,9 +826,9 @@ class Game {
                 if (s.phase > STORM_CONFIG.shrinkPhases) return; // at min size, done shrinking
 
                 // Calculate target radius for this phase
-                const maxR = Math.max(WORLD_WIDTH, WORLD_HEIGHT) * 0.9;
+                const startR = 2200;
                 const frac = 1 - (s.phase / STORM_CONFIG.shrinkPhases);
-                s.targetRadius = Math.max(STORM_CONFIG.minRadius, maxR * frac);
+                s.targetRadius = Math.max(STORM_CONFIG.minRadius, startR * frac);
                 s.shrinking = true;
                 s.nextShrinkTime = this.gameTime + STORM_CONFIG.shrinkInterval;
 
@@ -861,6 +862,10 @@ class Game {
 
     renderStorm(ctx) {
         const s = this.storm;
+
+        // Always draw the storm HUD (countdown, phase info)
+        this.renderStormHUD(ctx, s);
+
         if (!s.active) return;
 
         // Draw storm as a purple/dark overlay OUTSIDE the safe circle
@@ -916,20 +921,83 @@ class Game {
 
         ctx.restore();
 
-        // Storm timer/warning HUD
-        if (s.shrinking) {
-            ctx.fillStyle = 'rgba(160, 80, 220, 0.7)';
-            ctx.font = 'bold 14px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('⚡ STORM CLOSING ⚡', CANVAS_WIDTH / 2, 55);
-        } else if (s.active && s.phase <= STORM_CONFIG.shrinkPhases) {
-            const timeLeft = Math.max(0, Math.ceil(s.nextShrinkTime - this.gameTime));
-            if (timeLeft <= 15) {
-                ctx.fillStyle = 'rgba(160, 80, 220, 0.6)';
-                ctx.font = '12px Arial';
+        // Player-in-storm damage indicator (red vignette)
+        if (this.player && this.player.alive) {
+            const playerDist = distance(this.player.x, this.player.y, s.centerX, s.centerY);
+            if (playerDist > s.radius) {
+                const intensity = Math.min(0.4, (playerDist - s.radius) / 500 * 0.3 + 0.1);
+                const pulse = intensity + Math.sin(this.gameTime * 4) * 0.05;
+                // Red vignette edges
+                const gradient = ctx.createRadialGradient(
+                    CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.3,
+                    CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.8
+                );
+                gradient.addColorStop(0, 'rgba(150, 0, 0, 0)');
+                gradient.addColorStop(1, `rgba(150, 0, 0, ${pulse})`);
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+                // Warning text
+                ctx.fillStyle = '#FF4444';
+                ctx.font = 'bold 16px Arial';
                 ctx.textAlign = 'center';
-                ctx.fillText(`Storm shrinks in ${timeLeft}s`, CANVAS_WIDTH / 2, 55);
+                ctx.fillText('GET TO THE SAFE ZONE!', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 110);
             }
+        }
+
+        // Storm HUD timer
+        this.renderStormHUD(ctx, s);
+    }
+
+    renderStormHUD(ctx, s) {
+        ctx.textAlign = 'center';
+
+        // Pre-storm countdown
+        if (!s.active) {
+            const timeUntilStorm = Math.max(0, Math.ceil(STORM_CONFIG.startDelay - this.gameTime));
+            if (timeUntilStorm <= 30) {
+                // Urgent: last 30 seconds before storm
+                const urgency = timeUntilStorm <= 10 ? 1.0 : 0.6;
+                ctx.fillStyle = `rgba(160, 80, 220, ${urgency})`;
+                ctx.font = timeUntilStorm <= 10 ? 'bold 16px Arial' : '13px Arial';
+                const mins = Math.floor(timeUntilStorm / 60);
+                const secs = timeUntilStorm % 60;
+                const timeStr = mins > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : `${secs}s`;
+                ctx.fillText(`Storm in ${timeStr}`, CANVAS_WIDTH / 2, 60);
+            } else if (this.gameTime > 5) {
+                // Passive countdown after first 5 seconds
+                const timeUntil = Math.ceil(STORM_CONFIG.startDelay - this.gameTime);
+                const mins = Math.floor(timeUntil / 60);
+                const secs = timeUntil % 60;
+                ctx.fillStyle = 'rgba(160, 80, 220, 0.35)';
+                ctx.font = '11px Arial';
+                ctx.fillText(`Storm in ${mins}:${secs.toString().padStart(2, '0')}`, CANVAS_WIDTH / 2, 60);
+            }
+            return;
+        }
+
+        // Storm is active
+        if (s.shrinking) {
+            ctx.fillStyle = 'rgba(160, 80, 220, 0.8)';
+            ctx.font = 'bold 15px Arial';
+            ctx.fillText('STORM CLOSING', CANVAS_WIDTH / 2, 60);
+            ctx.fillStyle = 'rgba(160, 80, 220, 0.5)';
+            ctx.font = '11px Arial';
+            ctx.fillText(`Phase ${s.phase} / ${STORM_CONFIG.shrinkPhases}`, CANVAS_WIDTH / 2, 76);
+        } else if (s.phase <= STORM_CONFIG.shrinkPhases) {
+            const timeLeft = Math.max(0, Math.ceil(s.nextShrinkTime - this.gameTime));
+            const mins = Math.floor(timeLeft / 60);
+            const secs = timeLeft % 60;
+            const timeStr = mins > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : `${secs}s`;
+            const urgent = timeLeft <= 15;
+            ctx.fillStyle = urgent ? 'rgba(160, 80, 220, 0.7)' : 'rgba(160, 80, 220, 0.4)';
+            ctx.font = urgent ? 'bold 14px Arial' : '12px Arial';
+            ctx.fillText(`Storm Phase ${s.phase}/${STORM_CONFIG.shrinkPhases} — shrinks in ${timeStr}`, CANVAS_WIDTH / 2, 60);
+        } else {
+            // Final phase, no more shrinking
+            ctx.fillStyle = 'rgba(160, 80, 220, 0.4)';
+            ctx.font = '11px Arial';
+            ctx.fillText('Final Storm — fight!', CANVAS_WIDTH / 2, 60);
         }
     }
 

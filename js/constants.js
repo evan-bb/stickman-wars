@@ -144,7 +144,7 @@ const STORM_CONFIG = {
     shrinkDuration: 15,    // seconds for the circle to animate smaller
     shrinkPhases: 4,       // number of shrink phases
     minRadius: 400,        // minimum radius (shrink limit)
-    damage: 1,             // damage per second in the storm
+    damage: 8,             // damage per second in the storm (kills in ~12s)
     centerX: WORLD_WIDTH / 2,
     centerY: WORLD_HEIGHT / 2
 };
