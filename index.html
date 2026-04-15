@@ -29,15 +29,51 @@
             border: 2px solid #333;
             cursor: crosshair;
             image-rendering: pixelated;
-            width: 100vw;
-            height: 100vh;
-            height: 100dvh;
-            object-fit: contain;
+        }
+        #rotateOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: #111;
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        .rotate-content {
+            text-align: center;
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+        .rotate-icon {
+            font-size: 64px;
+            transform: rotate(90deg);
+            display: inline-block;
+        }
+        .rotate-arrow {
+            font-size: 48px;
+            color: #4488FF;
+            margin: 12px 0;
+        }
+        .rotate-content p {
+            font-size: 20px;
+            color: #aaa;
+        }
+        @media (orientation: portrait) and (max-width: 900px) {
+            #rotateOverlay { display: flex; }
+            canvas { display: none; }
         }
     </style>
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
+    <div id="rotateOverlay">
+        <div class="rotate-content">
+            <div class="rotate-icon">&#x1F4F1;</div>
+            <div class="rotate-arrow">&#x21BB;</div>
+            <p>Rotate your device to landscape</p>
+        </div>
+    </div>
 
     <!-- Scripts loaded in dependency order -->
     <script src="js/constants.js"></script>
