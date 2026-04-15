@@ -18,6 +18,12 @@ class Game {
         this.hud = new HUD();
         this.music = new MusicSystem();
         this.grid = new SpatialGrid(WORLD_WIDTH, WORLD_HEIGHT, GRID_CELL_SIZE);
+        this.progression = new ProgressionSystem();
+        this.screenFlashes = [];
+
+        // Match stats tracking
+        this.matchBossKills = 0;
+        this.matchSticksCollected = 0;
 
         this.player = null;
         this.entities = [];
@@ -189,6 +195,77 @@ class Game {
         ctx.font = 'bold 20px Arial';
         ctx.fillText('START', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 46);
 
+        // Level badge on menu
+        const prog = this.progression;
+        ctx.fillStyle = '#FFD700';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Level ${prog.level}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 80);
+
+        // XP progress bar
+        const barW = 120, barH = 6;
+        const barX = CANVAS_WIDTH / 2 - barW / 2;
+        const barY = CANVAS_HEIGHT / 2 + 86;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(barX, barY, barW, barH);
+        ctx.fillStyle = '#FFD700';
+        ctx.fillRect(barX, barY, barW * prog.xpProgress(), barH);
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(barX, barY, barW, barH);
+
+        // Stats
+        ctx.fillStyle = '#888';
+        ctx.font = '11px Arial';
+        ctx.fillText(`Games: ${prog.gamesPlayed}  |  Total Kills: ${prog.totalKills}  |  Best: ${prog.bestKills}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 108);
+
+        // Equipped cosmetics preview
+        if (prog.equippedHat !== 'none' || prog.equippedTrail !== 'none') {
+            ctx.fillStyle = '#777';
+            ctx.font = '11px Arial';
+            const cosmeticParts = [];
+            if (prog.equippedHat !== 'none') {
+                const hatInfo = LEVEL_UNLOCKS.find(u => u.key === prog.equippedHat);
+                cosmeticParts.push(hatInfo ? hatInfo.name : prog.equippedHat);
+            }
+            if (prog.equippedTrail !== 'none') {
+                const trailInfo = LEVEL_UNLOCKS.find(u => u.key === prog.equippedTrail);
+                cosmeticParts.push(trailInfo ? trailInfo.name : prog.equippedTrail);
+            }
+            ctx.fillText('Equipped: ' + cosmeticParts.join(', '), CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 124);
+        }
+
+        // Hat/Trail cycle with Q and T keys
+        if (this.input.isKeyDown('q')) {
+            this.input.keys['q'] = false;
+            const hats = prog.getUnlockedHats();
+            const idx = hats.findIndex(h => h.key === prog.equippedHat);
+            const next = hats[(idx + 1) % hats.length];
+            prog.equippedHat = next.key;
+            prog.save();
+        }
+        if (this.input.isKeyDown('t')) {
+            this.input.keys['t'] = false;
+            const trails = prog.getUnlockedTrails();
+            if (trails.length > 0) {
+                const current = trails.findIndex(t => t.key === prog.equippedTrail);
+                if (current === -1) {
+                    prog.equippedTrail = trails[0].key;
+                } else {
+                    const nextIdx = (current + 1) % (trails.length + 1);
+                    prog.equippedTrail = nextIdx < trails.length ? trails[nextIdx].key : 'none';
+                }
+                prog.save();
+            }
+        }
+
+        // Cosmetic cycle hint
+        if (prog.level >= 2) {
+            ctx.fillStyle = '#555';
+            ctx.font = '11px Arial';
+            ctx.fillText('Q: cycle hats  |  T: cycle trails', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 60);
+        }
+
         // Controls info
         ctx.fillStyle = '#666';
         ctx.font = '13px Arial';
@@ -353,6 +430,14 @@ class Game {
         this.state = 'COUNTDOWN';
         this.music.play('battle');
 
+        // Reset match tracking
+        this._matchXPAwarded = false;
+        this._matchXP = null;
+        this.matchBossKills = 0;
+        this.matchSticksCollected = 0;
+        this.progression.resetStreak();
+        this.screenFlashes = [];
+
         // Reset storm
         this.storm = {
             active: false,
@@ -422,6 +507,14 @@ class Game {
     updatePlaying(dt) {
         this.gameTime += dt;
         this.hud.update(dt);
+        this.progression.updateTimers(dt);
+
+        // Track kills this frame for streak detection
+        const prevKills = this.player.kills;
+
+        // Update screen flashes
+        for (const f of this.screenFlashes) f.update(dt);
+        this.screenFlashes = this.screenFlashes.filter(f => f.alive);
 
         // Update environmental particles (snow, embers, leaves)
         this.biomes.updateEnvParticles(dt);
@@ -478,13 +571,38 @@ class Game {
         for (const p of this.particles) p.update(dt);
         this.particles = this.particles.filter(p => p.alive);
 
-        // Pickup collection (player only)
+        // Detect new player kills this frame
+        if (this.player.kills > prevKills) {
+            const newKills = this.player.kills - prevKills;
+            for (let i = 0; i < newKills; i++) {
+                this.music.playSfx('kill');
+                this.screenFlashes.push(new ScreenFlash('#FFFFFF', 0.15));
+                const streak = this.progression.registerKill();
+                if (streak) {
+                    this.camera.shake(streak.shake, 0.3);
+                    this.music.playSfx('streak');
+                }
+            }
+        }
+
+        // Pickup collection (player only) with magnet effect
         for (const pickup of this.pickups) {
             if (pickup.collected) continue;
             pickup.update(dt);
-            if (distance(this.player.x, this.player.y, pickup.x, pickup.y) < STICK_COLLECT_RADIUS) {
+
+            const dist = distance(this.player.x, this.player.y, pickup.x, pickup.y);
+
+            // Magnet: pull sticks toward player when nearby
+            if (dist < STICK_MAGNET_RANGE && dist > STICK_COLLECT_RADIUS) {
+                const angle = angleBetween(pickup.x, pickup.y, this.player.x, this.player.y);
+                pickup.x += Math.cos(angle) * STICK_MAGNET_SPEED * dt;
+                pickup.y += Math.sin(angle) * STICK_MAGNET_SPEED * dt;
+            }
+
+            if (dist < STICK_COLLECT_RADIUS) {
                 pickup.collected = true;
                 this.player.sticks += pickup.amount;
+                this.matchSticksCollected += pickup.amount;
             }
         }
 
@@ -865,6 +983,11 @@ class Game {
         // Crates
         for (const c of this.crates) c.draw(ctx, this.camera);
 
+        // Draw player trail (behind entities)
+        if (this.player && this.player.alive) {
+            this.progression.drawTrail(ctx, this.player, this.camera);
+        }
+
         // Sort entities by Y for depth
         const sorted = [...this.entities].sort((a, b) => (a.x + a.y) - (b.x + b.y));
         for (const e of sorted) e.draw(ctx, this.camera);
@@ -886,6 +1009,18 @@ class Game {
 
         // Minimap
         this.minimap.draw(ctx, this.entities, this.player, this.camera, this.storm);
+
+        // XP bar in HUD
+        this.progression.drawXPBar(ctx);
+
+        // Screen flashes
+        for (const f of this.screenFlashes) f.draw(ctx);
+
+        // Kill streak announcement
+        this.progression.drawStreakAnnouncement(ctx);
+
+        // Level up effect
+        this.progression.drawLevelUpEffect(ctx);
     }
 
     // ==================== BOSS FIGHT ====================
@@ -1821,23 +1956,83 @@ class Game {
     }
 
     renderStats(ctx) {
+        // Award XP once per match end (use a flag to prevent re-awarding on every frame)
+        if (!this._matchXPAwarded) {
+            this._matchXPAwarded = true;
+            const bossKills = (this.bossDefeated ? 1 : 0) + (this.ghostDefeated ? 1 : 0) + (this.crabDefeated ? 1 : 0);
+            this._matchXP = this.progression.calculateMatchXP(
+                this.player.kills, bossKills, this.matchSticksCollected, this.gameTime
+            );
+            const prevLevel = this.progression.level;
+            this.progression.addXP(this._matchXP.total);
+            this.progression.totalKills += this.player.kills;
+            this.progression.totalBossKills += bossKills;
+            this.progression.gamesPlayed++;
+            if (this.player.kills > this.progression.bestKills) {
+                this.progression.bestKills = this.player.kills;
+            }
+            this.progression.save();
+            if (this.progression.level > prevLevel) {
+                this.music.playSfx('levelup');
+            }
+        }
+
+        const cx = CANVAS_WIDTH / 2;
+        let y = CANVAS_HEIGHT / 2 + 5;
+
         const minutes = Math.floor(this.gameTime / 60);
         const seconds = Math.floor(this.gameTime % 60);
         ctx.fillStyle = '#CCC';
-        ctx.font = '16px Arial';
+        ctx.font = '14px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(`Time: ${minutes}m ${seconds}s`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 10);
-        ctx.fillText(`Your Kills: ${this.player.kills}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 35);
-        ctx.fillText(`Sticks Collected: ${this.player.sticks}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 58);
-        if (this.bossDefeated) {
+        ctx.fillText(`Time: ${minutes}m ${seconds}s`, cx, y);
+        y += 20;
+        ctx.fillText(`Kills: ${this.player.kills}`, cx - 80, y);
+        ctx.fillText(`Sticks: ${this.matchSticksCollected}`, cx + 80, y);
+        y += 20;
+        if (this.bossDefeated || this.ghostDefeated || this.crabDefeated) {
             ctx.fillStyle = '#FFD700';
-            ctx.fillText('Boss Defeated!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 82);
+            const bosses = [this.bossDefeated && 'Spider', this.ghostDefeated && 'Ghost', this.crabDefeated && 'Crab'].filter(Boolean);
+            ctx.fillText('Bosses: ' + bosses.join(', '), cx, y);
+            y += 20;
+        }
+
+        // XP breakdown
+        if (this._matchXP) {
+            const xp = this._matchXP;
+            y += 6;
+            ctx.fillStyle = '#FFD700';
+            ctx.font = 'bold 16px Arial';
+            ctx.fillText(`+${xp.total} XP`, cx, y);
+            y += 18;
+            ctx.fillStyle = '#AAA';
+            ctx.font = '11px Arial';
+            const parts = [];
+            if (xp.killXP > 0) parts.push(`Kills: +${xp.killXP}`);
+            if (xp.bossXP > 0) parts.push(`Bosses: +${xp.bossXP}`);
+            if (xp.stickXP > 0) parts.push(`Sticks: +${xp.stickXP}`);
+            if (xp.survivalXP > 0) parts.push(`Survival: +${xp.survivalXP}`);
+            ctx.fillText(parts.join('  |  '), cx, y);
+            y += 16;
+
+            // Level progress bar
+            ctx.fillStyle = '#555';
+            const barW = 200, barH = 10;
+            ctx.fillRect(cx - barW / 2, y, barW, barH);
+            ctx.fillStyle = '#FFD700';
+            ctx.fillRect(cx - barW / 2, y, barW * this.progression.xpProgress(), barH);
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(cx - barW / 2, y, barW, barH);
+            ctx.fillStyle = '#FFF';
+            ctx.font = 'bold 10px Arial';
+            ctx.fillText(`Level ${this.progression.level}`, cx, y + 9);
         }
     }
 
     renderReplayButton(ctx) {
         const bx = CANVAS_WIDTH / 2 - 80;
-        const by = CANVAS_HEIGHT / 2 + 110;
+        const by = CANVAS_HEIGHT / 2 + 155;
         ctx.fillStyle = '#4488FF';
         ctx.fillRect(bx, by, 160, 40);
         ctx.fillStyle = '#FFF';

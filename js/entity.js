@@ -39,6 +39,12 @@ class Entity {
     takeDamage(amount, attacker) {
         if (!this.alive) return;
         this.health -= amount;
+
+        // Screen shake when player takes a hit
+        if (this.isPlayer && amount >= 5 && window.game && window.game.camera) {
+            window.game.camera.shake(3 + amount * 0.1, 0.15);
+        }
+
         if (this.health <= 0) {
             this.health = 0;
             this.die(attacker);

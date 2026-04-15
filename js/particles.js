@@ -81,16 +81,41 @@ function spawnHitParticles(particles, x, y, color, count) {
 }
 
 function spawnDeathParticles(particles, x, y, color) {
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 20; i++) {
         const angle = Math.random() * Math.PI * 2;
-        const speed = randomRange(30, 100);
+        const speed = randomRange(40, 140);
         particles.push(new Particle(
             x, y,
             Math.cos(angle) * speed,
-            Math.sin(angle) * speed - 30,
-            randomRange(0.5, 1.0),
+            Math.sin(angle) * speed - 40,
+            randomRange(0.5, 1.2),
             color,
-            randomRange(2, 5)
+            randomRange(2, 6)
         ));
+    }
+}
+
+// Screen flash effect (drawn as a full-screen overlay that fades)
+class ScreenFlash {
+    constructor(color, duration) {
+        this.color = color;
+        this.life = duration;
+        this.maxLife = duration;
+        this.alive = true;
+    }
+
+    update(dt) {
+        this.life -= dt;
+        if (this.life <= 0) this.alive = false;
+    }
+
+    draw(ctx) {
+        if (!this.alive) return;
+        const alpha = (this.life / this.maxLife) * 0.3;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = this.color;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        ctx.restore();
     }
 }

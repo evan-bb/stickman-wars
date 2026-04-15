@@ -117,7 +117,7 @@ class FoodPickup {
         ctx.fill();
 
         // Food icon
-        ctx.font = '16px Arial';
+        ctx.font = '20px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(this.emoji, pos.x, pos.y + bob);

@@ -175,6 +175,11 @@ function drawStickman(ctx, entity, camera) {
 
     ctx.restore();
 
+    // Draw hat on player
+    if (isPlayer && window.game && window.game.progression) {
+        window.game.progression.drawHat(ctx, x, headY, window.game.progression.equippedHat);
+    }
+
     // Health bar
     if (entity.health < entity.maxHealth && entity.alive) {
         drawHealthBar(ctx, x, headY - 10, 24, 3, entity.health / entity.maxHealth, color);

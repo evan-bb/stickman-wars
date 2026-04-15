@@ -151,3 +151,39 @@ const STORM_CONFIG = {
 
 // Grid cell size for spatial partitioning
 const GRID_CELL_SIZE = 200;
+
+// Kill streak thresholds
+const KILL_STREAKS = [
+    { kills: 3, label: 'TRIPLE KILL!', color: '#FFAA00', shake: 4 },
+    { kills: 5, label: 'RAMPAGE!', color: '#FF6600', shake: 6 },
+    { kills: 7, label: 'DOMINATING!', color: '#FF3300', shake: 7 },
+    { kills: 10, label: 'UNSTOPPABLE!', color: '#FFD700', shake: 10 },
+    { kills: 15, label: 'GODLIKE!', color: '#FF00FF', shake: 12 },
+];
+
+// XP and Leveling
+const XP_PER_KILL = 10;
+const XP_PER_BOSS = 100;
+const XP_PER_STICK = 0.5;
+const XP_PER_SURVIVAL_SEC = 0.5;
+const XP_BASE = 100;       // XP needed for level 2
+const XP_GROWTH = 1.4;     // each level needs 1.4x more XP
+
+// Stick magnet config
+const STICK_MAGNET_RANGE = 80;
+const STICK_MAGNET_SPEED = 250;
+
+// Cosmetic unlocks by level
+const LEVEL_UNLOCKS = [
+    { level: 1, type: 'hat', key: 'none', name: 'Default' },
+    { level: 2, type: 'trail', key: 'dust', name: 'Dust Trail' },
+    { level: 3, type: 'hat', key: 'bandana', name: 'Bandana' },
+    { level: 5, type: 'hat', key: 'crown', name: 'Crown' },
+    { level: 7, type: 'trail', key: 'fire', name: 'Fire Trail' },
+    { level: 8, type: 'hat', key: 'pirate', name: 'Pirate Hat' },
+    { level: 10, type: 'hat', key: 'wizard', name: 'Wizard Hat' },
+    { level: 12, type: 'trail', key: 'sparkle', name: 'Sparkle Trail' },
+    { level: 15, type: 'hat', key: 'cat_ears', name: 'Cat Ears' },
+    { level: 18, type: 'trail', key: 'rainbow', name: 'Rainbow Trail' },
+    { level: 20, type: 'hat', key: 'halo', name: 'Halo' },
+];

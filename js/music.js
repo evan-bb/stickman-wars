@@ -628,6 +628,28 @@ class MusicSystem {
                 this.playLead(t, 800, 0.06, 0.08);
                 this.playLead(t + 0.03, 600, 0.06, 0.06);
                 break;
+            case 'kill':
+                // Satisfying kill ding
+                this.playLead(t, 880, 0.08, 0.1);
+                this.playLead(t + 0.06, 1100, 0.12, 0.08);
+                break;
+            case 'streak':
+                // Kill streak fanfare
+                this.playLead(t, 660, 0.1, 0.12);
+                this.playLead(t + 0.08, 880, 0.1, 0.12);
+                this.playLead(t + 0.16, 1100, 0.15, 0.14);
+                this.playDrum(t, 80, 0.2, 0.3);
+                this.playSnare(t + 0.08, 0.12, 0.2);
+                break;
+            case 'levelup':
+                // Level up jingle
+                this.playLead(t, 523, 0.15, 0.1);
+                this.playLead(t + 0.12, 659, 0.15, 0.1);
+                this.playLead(t + 0.24, 784, 0.15, 0.1);
+                this.playLead(t + 0.36, 1047, 0.3, 0.14);
+                this.playPad(t + 0.36, [523, 659, 784], 0.8, 0.04);
+                this.playDrum(t + 0.36, 60, 0.4, 0.3);
+                break;
             case 'countdown':
                 // Deep tonal "bong" - war horn feel
                 this.playDrum(t, 80, 0.5, 0.35);
