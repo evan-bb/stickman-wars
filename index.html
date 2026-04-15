@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Stickman Wars</title>
     <style>
         * {
@@ -16,13 +17,22 @@
             justify-content: center;
             align-items: center;
             min-height: 100vh;
+            min-height: 100dvh;
             overflow: hidden;
             font-family: Arial, sans-serif;
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
         canvas {
             border: 2px solid #333;
             cursor: crosshair;
             image-rendering: pixelated;
+            width: 100vw;
+            height: 100vh;
+            height: 100dvh;
+            object-fit: contain;
         }
     </style>
 </head>
@@ -34,6 +44,7 @@
     <script src="js/utils.js"></script>
     <script src="js/iso.js"></script>
     <script src="js/input.js"></script>
+    <script src="js/touch.js"></script>
     <script src="js/camera.js"></script>
     <script src="js/particles.js"></script>
     <script src="js/stickman.js"></script>

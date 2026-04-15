@@ -11,6 +11,7 @@ class Game {
         this.gameTime = 0;
 
         this.input = new InputHandler(canvas);
+        this.touch = new TouchControls(canvas, this.input);
         this.camera = new Camera();
         this.biomes = new BiomeRenderer();
         this.minimap = new Minimap();
@@ -122,6 +123,11 @@ class Game {
             case 'WIN': this.renderPlaying(); this.renderWin(); break;
             case 'LOSE': this.renderPlaying(); this.renderLose(); break;
         }
+
+        // Draw touch controls overlay (on top of everything)
+        if (this.touch.active && (this.state === 'PLAYING' || this.state === 'BOSS_FIGHT' || this.state === 'GHOST_FIGHT' || this.state === 'CRAB_FIGHT')) {
+            this.touch.draw(this.ctx);
+        }
     }
 
     // ==================== MENU ====================
@@ -186,7 +192,11 @@ class Game {
         // Controls info
         ctx.fillStyle = '#666';
         ctx.font = '13px Arial';
-        ctx.fillText('WASD to move | Mouse to aim | Click/Space to attack | E to interact', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 40);
+        if (this.touch.active) {
+            ctx.fillText('Left side: move | Right side: aim & attack | Buttons: sprint & interact', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 40);
+        } else {
+            ctx.fillText('WASD to move | Mouse to aim | Click/Space to attack | E to interact', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 40);
+        }
     }
 
     // ==================== WEAPON SELECT ====================

@@ -50,7 +50,8 @@ class HUD {
             ctx.fillStyle = 'rgba(255,255,255,0.6)';
             ctx.font = '9px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText(player.staminaExhausted ? 'EXHAUSTED' : (player.sprinting ? 'SPRINTING' : 'R to sprint'), hx + 100, hy + 31);
+            const sprintHint = player.staminaExhausted ? 'EXHAUSTED' : (player.sprinting ? 'SPRINTING' : 'R to sprint');
+            ctx.fillText(sprintHint, hx + 100, hy + 31);
         }
 
         // Sticks (below sprint bar)
@@ -196,7 +197,9 @@ class HUD {
         ctx.fillStyle = 'rgba(255,255,255,0.3)';
         ctx.font = '10px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Click, scroll, or 1-9 to switch', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 2);
+        ctx.fillText(window.game && window.game.touch && window.game.touch.active
+            ? 'Tap slot to switch weapon'
+            : 'Click, scroll, or 1-9 to switch', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 2);
     }
 
     drawWeaponIcon(ctx, cx, cy, weapon) {
