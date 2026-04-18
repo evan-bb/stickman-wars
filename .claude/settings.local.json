@@ -53,8 +53,7 @@
       "Bash(node -c /c/Users/Evan/code/stickman-wars/js/hud.js)",
       "Bash(git push:*)",
       "Bash(git pull:*)",
-      "Bash(git stash:*)",
-      "Bash(git rebase:*)"
+      "Bash(git stash:*)"
     ]
   }
 }

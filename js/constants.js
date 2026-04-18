@@ -172,11 +172,11 @@ const FOOD_TYPES = [
 // Storm config
 const STORM_CONFIG = {
     startDelay: 60,        // seconds before storm appears
-    shrinkInterval: 60,    // seconds between each shrink phase
-    shrinkDuration: 15,    // seconds for the circle to animate smaller
-    shrinkPhases: 4,       // number of shrink phases
-    minRadius: 400,        // minimum radius (shrink limit)
-    damage: 8,             // damage per second in the storm (kills in ~12s)
+    shrinkInterval: 45,    // seconds between each shrink phase
+    shrinkDuration: 12,    // seconds for the circle to animate smaller
+    shrinkPhases: 5,       // number of shrink phases
+    minRadius: 300,        // minimum radius (shrink limit)
+    damage: 15,            // damage per second in the storm
     centerX: WORLD_WIDTH / 2,
     centerY: WORLD_HEIGHT / 2
 };

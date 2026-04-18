@@ -900,10 +900,10 @@ class Game {
         // Check if it's time for the storm to start or shrink
         if (this.gameTime >= s.nextShrinkTime && s.phase <= STORM_CONFIG.shrinkPhases) {
             if (!s.active) {
-                // Storm just appeared — radius must be smaller than world diagonal
+                // Storm just appeared — radius smaller than world diagonal
                 // so edges of the map are immediately dangerous
                 s.active = true;
-                s.radius = 2200;
+                s.radius = 1800;
                 this.hud.notify('The storm is closing in!', '#AA44FF', 3);
             }
 
@@ -912,7 +912,7 @@ class Game {
                 if (s.phase > STORM_CONFIG.shrinkPhases) return; // at min size, done shrinking
 
                 // Calculate target radius for this phase
-                const startR = 2200;
+                const startR = 1800;
                 const frac = 1 - (s.phase / STORM_CONFIG.shrinkPhases);
                 s.targetRadius = Math.max(STORM_CONFIG.minRadius, startR * frac);
                 s.shrinking = true;
