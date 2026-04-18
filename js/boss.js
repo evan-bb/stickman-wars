@@ -964,3 +964,633 @@ class CrabBoss extends Entity {
         }
     }
 }
+
+// ============================================
+// Polar Boss - Tommy the Polar Bear
+// ============================================
+
+class PolarBoss extends Entity {
+    constructor(x, y) {
+        super(x, y, TEAMS.NEUTRAL);
+        this.health = POLAR_BOSS_CONFIG.health;
+        this.maxHealth = POLAR_BOSS_CONFIG.health;
+        this.name = POLAR_BOSS_CONFIG.name;
+        this.speed = POLAR_BOSS_CONFIG.speed;
+        this.radius = 28;
+        this.phase = 1;
+
+        this.attackTimer = 2;
+        this.currentAttack = 'idle';
+        this.chargeTarget = null;
+        this.chargeTimer = 0;
+        this.chargeWindup = 0;
+        this.slamTimer = 0;
+        this.slamRadius = 0;
+        this.slamActive = false;
+        this.legPhase = 0;
+        this.breathPhase = 0;
+        this.frostAura = 0;
+
+        this.active = false;
+    }
+
+    activate() {
+        this.active = true;
+        this.attackTimer = 1.5;
+    }
+
+    update(dt, player, projectiles, particles) {
+        if (!this.active || !this.alive) return;
+        super.update(dt);
+
+        this.legPhase += dt * 4;
+        this.breathPhase += dt * 2;
+        if (this.frostAura > 0) this.frostAura -= dt;
+
+        // Phase check
+        if (this.health / this.maxHealth <= POLAR_BOSS_CONFIG.phase2Threshold && this.phase === 1) {
+            this.phase = 2;
+            this.speed = POLAR_BOSS_CONFIG.speed * 1.4;
+            this.frostAura = 99999;
+            spawnHitParticles(particles, this.x, this.y, '#88DDFF', 15);
+        }
+
+        // Face player
+        if (player && player.alive) {
+            this.facing = angleBetween(this.x, this.y, player.x, player.y);
+        }
+
+        // Charge wind-up
+        if (this.chargeWindup > 0) {
+            this.chargeWindup -= dt;
+            if (this.chargeWindup <= 0) {
+                this.currentAttack = 'charge';
+                this.chargeTimer = 0.5;
+                this.chargeTarget = player ? { x: player.x, y: player.y } : null;
+            }
+            return;
+        }
+
+        // Charging
+        if (this.currentAttack === 'charge') {
+            this.chargeTimer -= dt;
+            if (this.chargeTarget) {
+                const angle = angleBetween(this.x, this.y, this.chargeTarget.x, this.chargeTarget.y);
+                this.x += Math.cos(angle) * POLAR_BOSS_CONFIG.chargeSpeed * dt;
+                this.y += Math.sin(angle) * POLAR_BOSS_CONFIG.chargeSpeed * dt;
+                this.vx = Math.cos(angle) * POLAR_BOSS_CONFIG.chargeSpeed;
+                this.vy = Math.sin(angle) * POLAR_BOSS_CONFIG.chargeSpeed;
+                this.x = clamp(this.x, 30, ICE_CASTLE_WIDTH - 30);
+                this.y = clamp(this.y, 30, ICE_CASTLE_HEIGHT - 30);
+                // Ice trail in phase 2
+                if (this.phase === 2 && Math.random() < 0.3) {
+                    spawnHitParticles(particles, this.x, this.y, '#AADDFF', 2);
+                }
+            }
+            if (player && player.alive && distance(this.x, this.y, player.x, player.y) < this.radius + player.radius) {
+                player.takeDamage(POLAR_BOSS_CONFIG.damage, this);
+                spawnHitParticles(particles, player.x, player.y, '#88DDFF', 8);
+                particles.push(new DamageNumber(player.x, player.y - 10, POLAR_BOSS_CONFIG.damage, '#FF0000'));
+                const kb = 25;
+                const kbAngle = angleBetween(this.x, this.y, player.x, player.y);
+                player.x += Math.cos(kbAngle) * kb;
+                player.y += Math.sin(kbAngle) * kb;
+                this.chargeTimer = 0;
+            }
+            if (this.chargeTimer <= 0) {
+                this.currentAttack = 'idle';
+                this.attackTimer = this.phase === 2 ? 1.2 : 2.0;
+            }
+            return;
+        }
+
+        // Ground slam AoE
+        if (this.slamActive) {
+            this.slamRadius += dt * 250;
+            this.slamTimer -= dt;
+            if (player && player.alive) {
+                const dist = distance(this.x, this.y, player.x, player.y);
+                if (dist < this.slamRadius && dist > this.slamRadius - 40) {
+                    player.takeDamage(20, this);
+                    spawnHitParticles(particles, player.x, player.y, '#AADDFF', 5);
+                    particles.push(new DamageNumber(player.x, player.y - 10, 20, '#88DDFF'));
+                }
+            }
+            if (this.slamTimer <= 0) {
+                this.slamActive = false;
+                this.slamRadius = 0;
+            }
+            return;
+        }
+
+        // Normal movement
+        if (player && player.alive) {
+            const dist = distance(this.x, this.y, player.x, player.y);
+            if (dist > 60) {
+                this.x += Math.cos(this.facing) * this.speed * dt;
+                this.y += Math.sin(this.facing) * this.speed * dt;
+                this.vx = Math.cos(this.facing) * this.speed;
+                this.vy = Math.sin(this.facing) * this.speed;
+            }
+            this.x = clamp(this.x, 30, ICE_CASTLE_WIDTH - 30);
+            this.y = clamp(this.y, 30, ICE_CASTLE_HEIGHT - 30);
+        }
+
+        this.attackTimer -= dt;
+        if (this.attackTimer <= 0 && player && player.alive) {
+            this.chooseAttack(player, projectiles, particles);
+        }
+    }
+
+    chooseAttack(player, projectiles, particles) {
+        const dist = distance(this.x, this.y, player.x, player.y);
+        const roll = Math.random();
+
+        if (dist < 80 && roll < 0.35) {
+            // Ground slam
+            this.slamActive = true;
+            this.slamTimer = 0.6;
+            this.slamRadius = 0;
+            this.attackTimer = this.phase === 2 ? 1.5 : 2.5;
+            spawnHitParticles(particles, this.x, this.y, '#CCEFFF', 10);
+        } else if (roll < 0.6) {
+            // Charge
+            this.chargeWindup = 0.5;
+            this.currentAttack = 'windup';
+            this.attackTimer = 2.5;
+        } else {
+            // Icicle throw
+            this.icicleThrow(player, projectiles);
+            this.attackTimer = this.phase === 2 ? 1.0 : 1.8;
+        }
+    }
+
+    icicleThrow(player, projectiles) {
+        const angle = angleBetween(this.x, this.y, player.x, player.y);
+        const icicleWeapon = {
+            damage: 18,
+            projectileSpeed: POLAR_BOSS_CONFIG.icicleSpeed,
+            color: '#88DDFF',
+            burn: false,
+            pierce: false
+        };
+        projectiles.push(new Projectile(
+            this.x + Math.cos(angle) * 25, this.y + Math.sin(angle) * 25,
+            angle, icicleWeapon, TEAMS.NEUTRAL, this
+        ));
+        if (this.phase === 2) {
+            projectiles.push(new Projectile(
+                this.x, this.y, angle - 0.3, icicleWeapon, TEAMS.NEUTRAL, this
+            ));
+            projectiles.push(new Projectile(
+                this.x, this.y, angle + 0.3, icicleWeapon, TEAMS.NEUTRAL, this
+            ));
+        }
+    }
+
+    draw(ctx, camera) {
+        if (!this.alive && this.deathTimer <= 0) return;
+        const pos = camera.worldToScreen(this.x, this.y);
+        let { x, y } = pos;
+        const isoFacing = worldAngleToIso(this.facing);
+
+        ctx.save();
+        if (!this.alive) {
+            ctx.globalAlpha = clamp(this.deathTimer / 0.5, 0, 1);
+        }
+
+        // Frost aura (phase 2)
+        if (this.frostAura > 0) {
+            ctx.strokeStyle = `rgba(136, 221, 255, ${0.2 + Math.sin(this.breathPhase * 3) * 0.1})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x, y, 38 + Math.sin(this.breathPhase * 2) * 3, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // Body (big oval, white bear)
+        const breathOffset = Math.sin(this.breathPhase) * 1.5;
+        ctx.fillStyle = '#E8E8F0';
+        ctx.beginPath();
+        ctx.ellipse(x, y + breathOffset, 26, 20, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#F0F0F8';
+        ctx.beginPath();
+        ctx.ellipse(x, y + breathOffset - 2, 22, 16, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Legs (4, stubby)
+        ctx.fillStyle = '#D8D8E0';
+        const legPositions = [
+            { angle: isoFacing - 0.8, dist: 18 },
+            { angle: isoFacing + 0.8, dist: 18 },
+            { angle: isoFacing + Math.PI - 0.6, dist: 16 },
+            { angle: isoFacing + Math.PI + 0.6, dist: 16 }
+        ];
+        for (let i = 0; i < 4; i++) {
+            const lp = legPositions[i];
+            const phase = Math.sin(this.legPhase + i * 1.5) * 3;
+            const lx = x + Math.cos(lp.angle) * lp.dist;
+            const ly = y + Math.sin(lp.angle) * lp.dist * 0.7 + phase;
+            ctx.beginPath();
+            ctx.ellipse(lx, ly, 7, 5, lp.angle, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Head
+        const headX = x + Math.cos(isoFacing) * 22;
+        const headY = y + Math.sin(isoFacing) * 16 - 4;
+        ctx.fillStyle = '#E8E8F0';
+        ctx.beginPath();
+        ctx.arc(headX, headY, 14, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Ears
+        ctx.fillStyle = '#D0D0D8';
+        ctx.beginPath();
+        ctx.arc(headX - 8, headY - 10, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(headX + 8, headY - 10, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Snout
+        ctx.fillStyle = '#C8C8D0';
+        ctx.beginPath();
+        ctx.ellipse(headX + Math.cos(isoFacing) * 8, headY + Math.sin(isoFacing) * 6, 6, 4, isoFacing, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Nose
+        ctx.fillStyle = '#333';
+        ctx.beginPath();
+        ctx.arc(headX + Math.cos(isoFacing) * 13, headY + Math.sin(isoFacing) * 9, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Eyes
+        const eyeColor = this.phase === 2 ? '#44CCFF' : '#222';
+        if (this.phase === 2) {
+            ctx.shadowColor = '#44CCFF';
+            ctx.shadowBlur = 8;
+        }
+        ctx.fillStyle = eyeColor;
+        const eyePerp = isoFacing + Math.PI / 2;
+        ctx.beginPath();
+        ctx.arc(headX + Math.cos(eyePerp) * 5 + Math.cos(isoFacing) * 5, headY + Math.sin(eyePerp) * 3 - 3, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(headX - Math.cos(eyePerp) * 5 + Math.cos(isoFacing) * 5, headY - Math.sin(eyePerp) * 3 - 3, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Charge wind-up indicator
+        if (this.chargeWindup > 0) {
+            ctx.strokeStyle = `rgba(136, 221, 255, ${this.chargeWindup})`;
+            ctx.lineWidth = 3;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.arc(x, y, 35, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // Ground slam ring
+        if (this.slamActive) {
+            const slamAlpha = clamp(1 - this.slamRadius / 150, 0, 0.6);
+            ctx.strokeStyle = `rgba(136, 221, 255, ${slamAlpha})`;
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.arc(x, y, this.slamRadius * 0.8, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.strokeStyle = `rgba(200, 240, 255, ${slamAlpha * 0.5})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x, y, this.slamRadius * 0.5, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+
+        // Health bar
+        if (this.alive) {
+            ctx.fillStyle = '#333';
+            ctx.fillRect(x - 30, y - 38, 60, 6);
+            const pct = this.health / this.maxHealth;
+            ctx.fillStyle = pct > 0.5 ? '#88DDFF' : '#FF4444';
+            ctx.fillRect(x - 30, y - 38, 60 * pct, 6);
+            ctx.strokeStyle = '#FFF';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x - 30, y - 38, 60, 6);
+
+            ctx.fillStyle = '#88DDFF';
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.name, x, y - 44);
+            if (this.phase === 2) {
+                ctx.fillStyle = '#44CCFF';
+                ctx.font = '10px Arial';
+                ctx.fillText('ENRAGED', x, y - 54);
+            }
+        }
+    }
+}
+
+// ============================================
+// Lava Boss - Paddy the Lava Monster
+// ============================================
+
+class LavaBoss extends Entity {
+    constructor(x, y) {
+        super(x, y, TEAMS.NEUTRAL);
+        this.health = LAVA_BOSS_CONFIG.health;
+        this.maxHealth = LAVA_BOSS_CONFIG.health;
+        this.name = LAVA_BOSS_CONFIG.name;
+        this.speed = LAVA_BOSS_CONFIG.speed;
+        this.radius = 25;
+        this.phase = 1;
+
+        this.attackTimer = 2;
+        this.currentAttack = 'idle';
+        this.slamTimer = 0;
+        this.eruptionTimer = 0;
+        this.eruptionRadius = 0;
+        this.eruptionActive = false;
+        this.blobPhase = 0;
+        this.crackPhase = 0;
+        this.lavaPools = []; // {x, y, radius, life}
+
+        this.active = false;
+    }
+
+    activate() {
+        this.active = true;
+        this.attackTimer = 1.5;
+    }
+
+    update(dt, player, projectiles, particles) {
+        if (!this.active || !this.alive) return;
+        super.update(dt);
+
+        this.blobPhase += dt * 3;
+        this.crackPhase += dt * 2;
+
+        // Phase check
+        if (this.health / this.maxHealth <= LAVA_BOSS_CONFIG.phase2Threshold && this.phase === 1) {
+            this.phase = 2;
+            this.speed = LAVA_BOSS_CONFIG.speed * 1.5;
+            spawnHitParticles(particles, this.x, this.y, '#FF6600', 20);
+        }
+
+        // Face player
+        if (player && player.alive) {
+            this.facing = angleBetween(this.x, this.y, player.x, player.y);
+        }
+
+        // Eruption AoE update
+        if (this.eruptionActive) {
+            this.eruptionRadius += dt * 180;
+            this.eruptionTimer -= dt;
+            if (player && player.alive) {
+                const dist = distance(this.x, this.y, player.x, player.y);
+                if (Math.abs(dist - this.eruptionRadius) < 30) {
+                    player.takeDamage(25 * dt, this);
+                }
+            }
+            if (this.eruptionTimer <= 0) {
+                this.eruptionActive = false;
+                this.eruptionRadius = 0;
+            }
+            return;
+        }
+
+        // Update lava pools
+        for (const pool of this.lavaPools) {
+            pool.life -= dt;
+            if (player && player.alive && distance(player.x, player.y, pool.x, pool.y) < pool.radius) {
+                player.takeDamage(LAVA_BOSS_CONFIG.burnDamage * dt, this);
+                if (Math.random() < 0.1) {
+                    spawnHitParticles(particles, player.x, player.y, '#FF4400', 2);
+                    particles.push(new DamageNumber(player.x, player.y - 10, 1, '#FF6600'));
+                }
+            }
+        }
+        this.lavaPools = this.lavaPools.filter(p => p.life > 0);
+
+        // Normal movement
+        if (player && player.alive) {
+            const dist = distance(this.x, this.y, player.x, player.y);
+            if (dist > 70) {
+                this.x += Math.cos(this.facing) * this.speed * dt;
+                this.y += Math.sin(this.facing) * this.speed * dt;
+                this.vx = Math.cos(this.facing) * this.speed;
+                this.vy = Math.sin(this.facing) * this.speed;
+            }
+            this.x = clamp(this.x, 30, VOLCANO_LAIR_WIDTH - 30);
+            this.y = clamp(this.y, 30, VOLCANO_LAIR_HEIGHT - 30);
+        }
+
+        // Dripping lava particles
+        if (Math.random() < 0.15) {
+            spawnHitParticles(particles, this.x + randomRange(-10, 10), this.y + randomRange(-10, 10), '#FF6600', 1);
+        }
+
+        this.attackTimer -= dt;
+        if (this.attackTimer <= 0 && player && player.alive) {
+            this.chooseAttack(player, projectiles, particles);
+        }
+    }
+
+    chooseAttack(player, projectiles, particles) {
+        const dist = distance(this.x, this.y, player.x, player.y);
+        const roll = Math.random();
+
+        if (dist < 80 && roll < 0.3) {
+            // Body slam
+            if (player && player.alive && distance(this.x, this.y, player.x, player.y) < 80) {
+                player.takeDamage(LAVA_BOSS_CONFIG.damage, this);
+                spawnHitParticles(particles, player.x, player.y, '#FF4400', 8);
+                particles.push(new DamageNumber(player.x, player.y - 10, LAVA_BOSS_CONFIG.damage, '#FF0000'));
+                const kb = 20;
+                const kbAngle = angleBetween(this.x, this.y, player.x, player.y);
+                player.x += Math.cos(kbAngle) * kb;
+                player.y += Math.sin(kbAngle) * kb;
+            }
+            this.attackTimer = this.phase === 2 ? 1.0 : 1.8;
+        } else if (roll < 0.5 && this.lavaPools.length < 5) {
+            // Drop lava pool
+            this.lavaPools.push({
+                x: this.x + randomRange(-40, 40),
+                y: this.y + randomRange(-40, 40),
+                radius: this.phase === 2 ? 40 : 30,
+                life: this.phase === 2 ? 6 : 4
+            });
+            spawnHitParticles(particles, this.x, this.y, '#FF6600', 6);
+            this.attackTimer = this.phase === 2 ? 1.2 : 2.0;
+        } else if (this.phase === 2 && roll < 0.65 && !this.eruptionActive) {
+            // Eruption (phase 2 only)
+            this.eruptionActive = true;
+            this.eruptionTimer = 1.0;
+            this.eruptionRadius = 0;
+            this.attackTimer = 2.5;
+            spawnHitParticles(particles, this.x, this.y, '#FF2200', 12);
+        } else {
+            // Magma spit
+            this.magmaSpit(player, projectiles);
+            this.attackTimer = this.phase === 2 ? 0.8 : 1.5;
+        }
+    }
+
+    magmaSpit(player, projectiles) {
+        const angle = angleBetween(this.x, this.y, player.x, player.y);
+        const magmaWeapon = {
+            damage: 15,
+            projectileSpeed: LAVA_BOSS_CONFIG.magmaSpeed,
+            color: '#FF4400',
+            burn: false,
+            pierce: false
+        };
+        projectiles.push(new Projectile(
+            this.x + Math.cos(angle) * 22, this.y + Math.sin(angle) * 22,
+            angle, magmaWeapon, TEAMS.NEUTRAL, this
+        ));
+        if (this.phase === 2) {
+            projectiles.push(new Projectile(
+                this.x, this.y, angle - 0.25, magmaWeapon, TEAMS.NEUTRAL, this
+            ));
+            projectiles.push(new Projectile(
+                this.x, this.y, angle + 0.25, magmaWeapon, TEAMS.NEUTRAL, this
+            ));
+        }
+    }
+
+    draw(ctx, camera) {
+        if (!this.alive && this.deathTimer <= 0) return;
+        const pos = camera.worldToScreen(this.x, this.y);
+        let { x, y } = pos;
+
+        ctx.save();
+        if (!this.alive) {
+            ctx.globalAlpha = clamp(this.deathTimer / 0.5, 0, 1);
+        }
+
+        // Draw lava pools
+        for (const pool of this.lavaPools) {
+            const pp = camera.worldToScreen(pool.x, pool.y);
+            const poolAlpha = clamp(pool.life / 2, 0, 0.7);
+            ctx.fillStyle = `rgba(255, 80, 0, ${poolAlpha})`;
+            ctx.beginPath();
+            ctx.ellipse(pp.x, pp.y, pool.radius * 0.8, pool.radius * 0.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = `rgba(255, 200, 0, ${poolAlpha * 0.5})`;
+            ctx.beginPath();
+            ctx.ellipse(pp.x, pp.y, pool.radius * 0.5, pool.radius * 0.3, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Glow beneath
+        const glowSize = 35 + Math.sin(this.blobPhase) * 5;
+        const glow = ctx.createRadialGradient(x, y, 5, x, y, glowSize);
+        glow.addColorStop(0, 'rgba(255, 100, 0, 0.3)');
+        glow.addColorStop(1, 'rgba(255, 50, 0, 0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(x, y, glowSize, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Body (blobby lava shape)
+        const blobR = 22 + Math.sin(this.blobPhase * 1.5) * 3;
+        ctx.fillStyle = '#8B2500';
+        ctx.beginPath();
+        ctx.ellipse(x, y, blobR + 2, blobR * 0.8 + 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Molten core
+        ctx.fillStyle = '#CC4400';
+        ctx.beginPath();
+        ctx.ellipse(x, y, blobR, blobR * 0.8, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Glowing cracks
+        ctx.strokeStyle = `rgba(255, 200, 0, ${0.6 + Math.sin(this.crackPhase * 3) * 0.2})`;
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2 + this.crackPhase * 0.5;
+            const r1 = blobR * 0.3;
+            const r2 = blobR * 0.9;
+            ctx.beginPath();
+            ctx.moveTo(x + Math.cos(a) * r1, y + Math.sin(a) * r1 * 0.8);
+            ctx.lineTo(x + Math.cos(a + 0.1) * r2, y + Math.sin(a + 0.1) * r2 * 0.8);
+            ctx.stroke();
+        }
+
+        // Hot center glow
+        ctx.fillStyle = `rgba(255, 150, 0, ${0.4 + Math.sin(this.blobPhase * 2) * 0.15})`;
+        ctx.beginPath();
+        ctx.ellipse(x, y - 2, blobR * 0.5, blobR * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Eyes (bright orange/yellow)
+        ctx.shadowColor = '#FF6600';
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = this.phase === 2 ? '#FFFF00' : '#FF8800';
+        ctx.beginPath();
+        ctx.arc(x - 6, y - 6, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x + 6, y - 6, 4, 0, Math.PI * 2);
+        ctx.fill();
+        // Pupils
+        ctx.fillStyle = '#FF0000';
+        ctx.beginPath();
+        ctx.arc(x - 6, y - 6, 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x + 6, y - 6, 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Mouth
+        ctx.fillStyle = 'rgba(255, 200, 0, 0.6)';
+        ctx.beginPath();
+        ctx.ellipse(x, y + 5, 6, 3 + Math.sin(this.blobPhase * 2) * 1.5, 0, 0, Math.PI);
+        ctx.fill();
+
+        // Eruption ring
+        if (this.eruptionActive) {
+            const eruptAlpha = clamp(1 - this.eruptionRadius / LAVA_BOSS_CONFIG.eruptionRadius, 0, 0.7);
+            ctx.strokeStyle = `rgba(255, 80, 0, ${eruptAlpha})`;
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.arc(x, y, this.eruptionRadius * 0.8, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.strokeStyle = `rgba(255, 200, 0, ${eruptAlpha * 0.5})`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(x, y, this.eruptionRadius * 0.5, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+
+        // Health bar
+        if (this.alive) {
+            ctx.fillStyle = '#333';
+            ctx.fillRect(x - 30, y - 38, 60, 6);
+            const pct = this.health / this.maxHealth;
+            ctx.fillStyle = pct > 0.5 ? '#FF6600' : '#FF4444';
+            ctx.fillRect(x - 30, y - 38, 60 * pct, 6);
+            ctx.strokeStyle = '#FFF';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x - 30, y - 38, 60, 6);
+
+            ctx.fillStyle = '#FF6600';
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.name, x, y - 44);
+            if (this.phase === 2) {
+                ctx.fillStyle = '#FF2200';
+                ctx.font = '10px Arial';
+                ctx.fillText('ERUPTING', x, y - 54);
+            }
+        }
+    }
+}

@@ -60,6 +60,25 @@ class HUD {
         ctx.font = 'bold 14px Arial';
         ctx.fillText(`Sticks: ${player.sticks}`, hx, hy + 50);
 
+        // Level & XP bar
+        ctx.fillStyle = '#FFD700';
+        ctx.font = 'bold 13px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText(`Lvl ${player.level}`, hx, hy + 68);
+        const lvlBarX = hx + 45, lvlBarW = 100, lvlBarH = 6;
+        const lvlBarY = hy + 61;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(lvlBarX, lvlBarY, lvlBarW, lvlBarH);
+        ctx.fillStyle = '#FFD700';
+        ctx.fillRect(lvlBarX, lvlBarY, lvlBarW * player.getXPProgress(), lvlBarH);
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(lvlBarX, lvlBarY, lvlBarW, lvlBarH);
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.font = '9px Arial';
+        const xpToNext = player.getXPToNext();
+        ctx.fillText(xpToNext > 0 ? `${xpToNext} XP to next` : 'MAX', lvlBarX + lvlBarW + 5, hy + 68);
+
         // Inventory bar (bottom center)
         this.drawInventoryBar(ctx, player, input);
 

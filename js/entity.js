@@ -59,6 +59,9 @@ class Entity {
         this.fallDir = (this.vx >= 0) ? 1 : -1;
         if (killer && killer.alive) {
             killer.kills++;
+            if (killer.isPlayer && killer.addXP) {
+                killer.addXP(XP_PER_KILL);
+            }
             // Fall away from killer
             this.fallDir = (this.x >= killer.x) ? 1 : -1;
         }

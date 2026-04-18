@@ -66,6 +66,10 @@ class Game {
         this.ghostBoss = null;
         this.crabDefeated = false;
         this.crabBoss = null;
+        this.polarDefeated = false;
+        this.polarBoss = null;
+        this.lavaDefeated = false;
+        this.lavaBoss = null;
 
         // Storm system
         this.storm = {
@@ -110,6 +114,8 @@ class Game {
             case 'BOSS_FIGHT': this.updateBossFight(dt); break;
             case 'GHOST_FIGHT': this.updateGhostFight(dt); break;
             case 'CRAB_FIGHT': this.updateCrabFight(dt); break;
+            case 'POLAR_FIGHT': this.updatePolarFight(dt); break;
+            case 'LAVA_FIGHT': this.updateLavaFight(dt); break;
             case 'WIN': break;
             case 'LOSE': break;
         }
@@ -126,6 +132,8 @@ class Game {
             case 'BOSS_FIGHT': this.renderBossFight(); break;
             case 'GHOST_FIGHT': this.renderGhostFight(); break;
             case 'CRAB_FIGHT': this.renderCrabFight(); break;
+            case 'POLAR_FIGHT': this.renderPolarFight(); break;
+            case 'LAVA_FIGHT': this.renderLavaFight(); break;
             case 'WIN': this.renderPlaying(); this.renderWin(); break;
             case 'LOSE': this.renderPlaying(); this.renderLose(); break;
         }
@@ -286,7 +294,49 @@ class Game {
         ctx.fillStyle = '#FFF';
         ctx.font = 'bold 32px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Choose Your Starter Weapon', CANVAS_WIDTH / 2, 80);
+        ctx.fillText('Choose Your Starter Weapon', CANVAS_WIDTH / 2, 60);
+
+        // Player level display
+        const savedXP = parseInt(localStorage.getItem('stickman_xp') || '0');
+        let playerLevel = 0;
+        for (let i = 1; i < XP_LEVELS.length; i++) {
+            if (savedXP >= XP_LEVELS[i]) playerLevel = i;
+            else break;
+        }
+        if (savedXP >= XP_LEVELS[XP_LEVELS.length - 1]) playerLevel = XP_LEVELS.length - 1;
+
+        // Level badge
+        ctx.fillStyle = '#FFD700';
+        ctx.font = 'bold 22px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Level ${playerLevel}`, CANVAS_WIDTH / 2, 95);
+
+        // XP bar
+        const xpBarW = 200, xpBarH = 10;
+        const xpBarX = CANVAS_WIDTH / 2 - xpBarW / 2;
+        const xpBarY = 102;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(xpBarX, xpBarY, xpBarW, xpBarH);
+        let xpPct = 1;
+        if (playerLevel < XP_LEVELS.length - 1) {
+            const curLvlXP = XP_LEVELS[playerLevel];
+            const nxtLvlXP = XP_LEVELS[playerLevel + 1];
+            xpPct = (savedXP - curLvlXP) / (nxtLvlXP - curLvlXP);
+        }
+        ctx.fillStyle = '#FFD700';
+        ctx.fillRect(xpBarX, xpBarY, xpBarW * xpPct, xpBarH);
+        ctx.strokeStyle = '#555';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(xpBarX, xpBarY, xpBarW, xpBarH);
+
+        // XP text
+        ctx.fillStyle = '#AAA';
+        ctx.font = '11px Arial';
+        if (playerLevel < XP_LEVELS.length - 1) {
+            ctx.fillText(`${savedXP} / ${XP_LEVELS[playerLevel + 1]} XP`, CANVAS_WIDTH / 2, xpBarY + xpBarH + 14);
+        } else {
+            ctx.fillText(`${savedXP} XP (MAX LEVEL)`, CANVAS_WIDTH / 2, xpBarY + xpBarH + 14);
+        }
 
         const weapons = [
             { key: 'WOODEN_SWORD', desc: 'Balanced melee weapon.\nGood range and speed.' },
@@ -531,6 +581,11 @@ class Game {
                 this.hud.notify(`Switched to ${this.player.weapon.name}`, this.player.weapon.color, 1.2);
             }
         }
+        // Level-up notification
+        if (this.player.leveledUp) {
+            this.player.leveledUp = false;
+            this.hud.notify(`LEVEL UP! You are now Level ${this.player.level}!`, '#FFD700', 3);
+        }
         this.camera.follow(this.player);
         this.camera.update(dt);
 
@@ -756,6 +811,18 @@ class Game {
             this.player.interactTarget = 'sandcastle';
         }
 
+        // Check ice castle entrance
+        if (!this.polarDefeated && distance(this.player.x, this.player.y, ICE_CASTLE_ENTRANCE.x, ICE_CASTLE_ENTRANCE.y) < ICE_CASTLE_ENTRANCE.radius) {
+            this.player.interactPrompt = 'Press E to enter the Ice Castle (Boss: Tommy the Polar Bear)';
+            this.player.interactTarget = 'icecastle';
+        }
+
+        // Check volcano lair entrance
+        if (!this.lavaDefeated && distance(this.player.x, this.player.y, VOLCANO_LAIR_ENTRANCE.x, VOLCANO_LAIR_ENTRANCE.y) < VOLCANO_LAIR_ENTRANCE.radius) {
+            this.player.interactPrompt = 'Press E to enter the Volcano (Boss: Paddy the Lava Monster)';
+            this.player.interactTarget = 'volcano';
+        }
+
         // Handle E key interaction
         if (this.input.isKeyDown('e') && this.player.interactTarget) {
             if (this.player.interactTarget === 'cave') {
@@ -764,6 +831,10 @@ class Game {
                 this.enterHauntedHouse();
             } else if (this.player.interactTarget === 'sandcastle') {
                 this.enterSandCastle();
+            } else if (this.player.interactTarget === 'icecastle') {
+                this.enterIceCastle();
+            } else if (this.player.interactTarget === 'volcano') {
+                this.enterVolcanoLair();
             } else if (this.player.interactTarget instanceof Crate) {
                 const loot = this.player.interactTarget.open(this.player);
                 if (loot) {
@@ -1191,8 +1262,9 @@ class Game {
             this.bossDefeated = true;
             if (this.boss.deathTimer <= 0) {
                 this.exitCave();
-                this.hud.notify('Luca the Spider defeated! +50 sticks!', '#FFD700', 3);
+                this.hud.notify('Luca the Spider defeated! +50 sticks! +100 XP!', '#FFD700', 3);
                 this.player.sticks += 50;
+                this.player.addXP(XP_PER_BOSS);
             }
         }
 
@@ -1340,8 +1412,9 @@ class Game {
             this.ghostDefeated = true;
             if (this.ghostBoss.deathTimer <= 0) {
                 this.exitHauntedHouse();
-                this.hud.notify('James the Ghost defeated! +50 sticks!', '#88CCFF', 3);
+                this.hud.notify('James the Ghost defeated! +50 sticks! +100 XP!', '#88CCFF', 3);
                 this.player.sticks += 50;
+                this.player.addXP(XP_PER_BOSS);
             }
         }
 
@@ -1654,8 +1727,9 @@ class Game {
             this.crabDefeated = true;
             if (this.crabBoss.deathTimer <= 0) {
                 this.exitSandCastle();
-                this.hud.notify('Charlie the Crab defeated! +50 sticks!', '#FF8844', 3);
+                this.hud.notify('Charlie the Crab defeated! +50 sticks! +100 XP!', '#FF8844', 3);
                 this.player.sticks += 50;
+                this.player.addXP(XP_PER_BOSS);
             }
         }
 
@@ -1781,6 +1855,556 @@ class Game {
             ctx.font = 'bold 16px Arial';
             ctx.textAlign = 'center';
             ctx.fillText('Charlie the Crab', CANVAS_WIDTH / 2, 32);
+        }
+
+        // Player HP
+        const phx = CANVAS_WIDTH / 2 - 100;
+        const phy = CANVAS_HEIGHT - 40;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(phx, phy, 200, 16);
+        const phpct = this.player.health / this.player.maxHealth;
+        ctx.fillStyle = phpct > 0.5 ? '#44CC44' : phpct > 0.25 ? '#CCCC44' : '#CC4444';
+        ctx.fillRect(phx, phy, 200 * phpct, 16);
+        ctx.strokeStyle = '#FFF';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(phx, phy, 200, 16);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`HP: ${Math.ceil(this.player.health)} / ${this.player.maxHealth}`, CANVAS_WIDTH / 2, phy + 13);
+
+        // Inventory
+        this.hud.drawInventoryBar(ctx, this.player, this.input);
+        if (this.player.weapon) {
+            ctx.fillStyle = this.player.weapon.color;
+            ctx.font = 'bold 13px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.player.weapon.name, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 78);
+        }
+
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.font = '11px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Press ESC to flee', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 55);
+
+        if (this.hud.notificationTimer > 0) {
+            ctx.globalAlpha = Math.min(1, this.hud.notificationTimer);
+            ctx.fillStyle = this.hud.notificationColor;
+            ctx.font = 'bold 18px Arial';
+            ctx.fillText(this.hud.notification, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 100);
+            ctx.globalAlpha = 1;
+        }
+    }
+
+    // ==================== POLAR BEAR FIGHT ====================
+
+    enterIceCastle() {
+        this.inCave = true;
+        this.state = 'POLAR_FIGHT';
+        this.music.play('boss');
+        this.polarBoss = new PolarBoss(ICE_CASTLE_WIDTH / 2, 180);
+        this.polarBoss.activate();
+        this.player.x = ICE_CASTLE_WIDTH / 2;
+        this.player.y = ICE_CASTLE_HEIGHT - 80;
+        this.polarProjectiles = [];
+        this.polarParticles = [];
+        this._polarCamera = this._makeRoomCamera(ICE_CASTLE_WIDTH, ICE_CASTLE_HEIGHT);
+    }
+
+    exitIceCastle() {
+        this.inCave = false;
+        this.state = 'PLAYING';
+        this.music.play('battle');
+        this.player.x = ICE_CASTLE_ENTRANCE.x;
+        this.player.y = ICE_CASTLE_ENTRANCE.y + 60;
+    }
+
+    updatePolarFight(dt) {
+        const cam = this._polarCamera || this._makeRoomCamera(ICE_CASTLE_WIDTH, ICE_CASTLE_HEIGHT);
+        this._polarCamera = cam;
+
+        // Player movement
+        let mx = 0, my = 0;
+        if (this.input.isKeyDown('w') || this.input.isKeyDown('arrowup'))    { mx -= 1; my -= 1; }
+        if (this.input.isKeyDown('s') || this.input.isKeyDown('arrowdown'))  { mx += 1; my += 1; }
+        if (this.input.isKeyDown('a') || this.input.isKeyDown('arrowleft'))  { mx -= 1; my += 1; }
+        if (this.input.isKeyDown('d') || this.input.isKeyDown('arrowright')) { mx += 1; my -= 1; }
+        const mLen = Math.sqrt(mx * mx + my * my);
+        if (mLen > 0) { mx /= mLen; my /= mLen; }
+        this.player.vx = mx * this.player.speed;
+        this.player.vy = my * this.player.speed;
+        this.player.x += this.player.vx * dt;
+        this.player.y += this.player.vy * dt;
+        this.player.x = clamp(this.player.x, 30, ICE_CASTLE_WIDTH - 30);
+        this.player.y = clamp(this.player.y, 30, ICE_CASTLE_HEIGHT - 30);
+
+        if (Math.abs(this.player.vx) > 1 || Math.abs(this.player.vy) > 1) {
+            this.player.moveFacing = Math.atan2(this.player.vy, this.player.vx);
+            this.player.walkTimer += dt;
+        }
+
+        const worldMouse = cam.screenToWorld(this.input.mouseX, this.input.mouseY);
+        this.player.facing = angleBetween(this.player.x, this.player.y, worldMouse.x, worldMouse.y);
+
+        // Weapon switching
+        for (let i = 1; i <= 9; i++) {
+            if (this.input.isKeyDown(i.toString())) { this.player.switchToSlot(i - 1); this.input.keys[i.toString()] = false; }
+        }
+        const scroll = this.input.consumeScroll();
+        if (scroll !== 0) this.player.cycleWeapon(scroll > 0 ? 1 : -1);
+        if (this.player.weaponSwitched) {
+            this.player.weaponSwitched = false;
+            this.music.playSfx('weapon_switch');
+            if (this.player.weapon) this.hud.notify(`Switched to ${this.player.weapon.name}`, this.player.weapon.color, 1.2);
+        }
+
+        // Attack
+        const polarEntities = [this.polarBoss];
+        if (this.player.weapon && (this.input.mouseDown || this.input.isKeyDown(' '))) {
+            this.player.weapon.attack(this.player, polarEntities, this.polarProjectiles, this.polarParticles);
+        }
+        for (const wpn of this.player.inventory) { wpn.update(dt); }
+        if (this.player.attackAnim > 0) { this.player.attackAnim -= dt * 4; if (this.player.attackAnim < 0) this.player.attackAnim = 0; }
+
+        // Update polar boss
+        this.polarBoss.update(dt, this.player, this.polarProjectiles, this.polarParticles);
+
+        // Projectiles
+        for (const proj of this.polarProjectiles) {
+            proj.update(dt);
+            if (proj.team === TEAMS.NEUTRAL && this.player.alive) {
+                if (circleCollision(proj.x, proj.y, proj.radius, this.player.x, this.player.y, this.player.radius)) {
+                    this.player.takeDamage(proj.damage, this.polarBoss);
+                    spawnHitParticles(this.polarParticles, this.player.x, this.player.y, '#88DDFF', 5);
+                    this.polarParticles.push(new DamageNumber(this.player.x, this.player.y - 10, proj.damage, '#88DDFF'));
+                    proj.alive = false;
+                }
+            }
+            if (proj.team === TEAMS.BLUE && this.polarBoss.alive) {
+                if (circleCollision(proj.x, proj.y, proj.radius, this.polarBoss.x, this.polarBoss.y, this.polarBoss.radius)) {
+                    this.polarBoss.takeDamage(proj.damage, this.player);
+                    spawnHitParticles(this.polarParticles, this.polarBoss.x, this.polarBoss.y, '#88DDFF', 5);
+                    this.polarParticles.push(new DamageNumber(this.polarBoss.x, this.polarBoss.y - 10, proj.damage, '#FFAA44'));
+                    proj.alive = false;
+                }
+            }
+        }
+        this.polarProjectiles = this.polarProjectiles.filter(p => p.alive);
+
+        for (const p of this.polarParticles) { p.update(dt); }
+        this.polarParticles = this.polarParticles.filter(p => p.alive || (p.life !== undefined && p.life > 0));
+
+        this.hud.update(dt);
+
+        // ESC to flee
+        if (this.input.isKeyDown('escape')) {
+            this.exitIceCastle();
+            this.hud.notify('Fled the Ice Castle!', '#88DDFF', 2);
+            this.input.keys['escape'] = false;
+            return;
+        }
+
+        // Polar bear defeated
+        if (!this.polarBoss.alive) {
+            this.polarDefeated = true;
+            if (this.polarBoss.deathTimer <= 0) {
+                this.exitIceCastle();
+                this.hud.notify('Tommy the Polar Bear defeated! +50 sticks! +100 XP!', '#88DDFF', 3);
+                this.player.sticks += 50;
+                this.player.addXP(XP_PER_BOSS);
+            }
+        }
+
+        if (!this.player.alive) {
+            this.state = 'LOSE';
+            this.music.stop();
+            this.music.playSfx('player_death');
+        }
+    }
+
+    renderPolarFight() {
+        const ctx = this.ctx;
+        const cam = this._polarCamera || this._makeRoomCamera(ICE_CASTLE_WIDTH, ICE_CASTLE_HEIGHT);
+
+        // Background
+        ctx.fillStyle = '#0a1520';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Ice floor
+        const roomCorners = [
+            cam.worldToScreen(0, 0),
+            cam.worldToScreen(ICE_CASTLE_WIDTH, 0),
+            cam.worldToScreen(ICE_CASTLE_WIDTH, ICE_CASTLE_HEIGHT),
+            cam.worldToScreen(0, ICE_CASTLE_HEIGHT)
+        ];
+        ctx.fillStyle = '#B8D8E8';
+        ctx.beginPath();
+        ctx.moveTo(roomCorners[0].x, roomCorners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(roomCorners[i].x, roomCorners[i].y);
+        ctx.closePath();
+        ctx.fill();
+
+        // Ice floor reflections
+        ctx.fillStyle = 'rgba(200, 230, 255, 0.3)';
+        for (let i = 0; i < 30; i++) {
+            const sx = Math.sin(i * 4.1) * ICE_CASTLE_WIDTH * 0.4 + ICE_CASTLE_WIDTH / 2;
+            const sy = Math.cos(i * 2.7) * ICE_CASTLE_HEIGHT * 0.4 + ICE_CASTLE_HEIGHT / 2;
+            const sp = cam.worldToScreen(sx, sy);
+            ctx.beginPath();
+            ctx.ellipse(sp.x, sp.y, randomRange(3, 12), randomRange(1, 4), randomRange(0, Math.PI), 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Ice walls
+        ctx.fillStyle = '#7AB8D0';
+        const tl = cam.worldToScreen(0, 0);
+        const tr = cam.worldToScreen(ICE_CASTLE_WIDTH, 0);
+        ctx.fillRect(Math.min(tl.x, tr.x), Math.min(tl.y, tr.y) - 50,
+            Math.abs(tr.x - tl.x), 50);
+
+        // Wall icicles
+        ctx.fillStyle = '#A0D8F0';
+        for (let i = 0; i < 16; i++) {
+            const ix = Math.min(tl.x, tr.x) + i * Math.abs(tr.x - tl.x) / 16 + 10;
+            const iy = Math.min(tl.y, tr.y);
+            const ilen = randomRange(8, 20);
+            ctx.beginPath();
+            ctx.moveTo(ix - 3, iy);
+            ctx.lineTo(ix, iy + ilen);
+            ctx.lineTo(ix + 3, iy);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        // Ice crystal decorations
+        ctx.strokeStyle = 'rgba(150, 220, 255, 0.3)';
+        ctx.lineWidth = 2;
+        const crystalPositions = [
+            cam.worldToScreen(60, 60),
+            cam.worldToScreen(ICE_CASTLE_WIDTH - 60, 60),
+            cam.worldToScreen(60, ICE_CASTLE_HEIGHT - 60),
+            cam.worldToScreen(ICE_CASTLE_WIDTH - 60, ICE_CASTLE_HEIGHT - 60)
+        ];
+        for (const cp of crystalPositions) {
+            for (let i = 0; i < 4; i++) {
+                const a = (i / 4) * Math.PI * 2 + Date.now() / 3000;
+                ctx.beginPath();
+                ctx.moveTo(cp.x, cp.y);
+                ctx.lineTo(cp.x + Math.cos(a) * 20, cp.y + Math.sin(a) * 20);
+                ctx.stroke();
+            }
+        }
+
+        // Snowflake particles
+        ctx.fillStyle = 'rgba(220, 240, 255, 0.4)';
+        for (let i = 0; i < 25; i++) {
+            const sx = Math.sin(Date.now() / 2000 + i * 2.1) * ICE_CASTLE_WIDTH * 0.4 + ICE_CASTLE_WIDTH / 2;
+            const sy = (Date.now() / 30 + i * 100) % ICE_CASTLE_HEIGHT;
+            const sp = cam.worldToScreen(sx, sy);
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Draw polar boss
+        if (this.polarBoss.alive || this.polarBoss.deathTimer > 0) {
+            this.polarBoss.draw(ctx, cam);
+        }
+
+        // Draw player
+        drawStickman(ctx, this.player, cam);
+
+        // Projectiles & particles
+        for (const proj of this.polarProjectiles) { proj.draw(ctx, cam); }
+        for (const p of this.polarParticles) { p.draw(ctx, cam); }
+
+        // Vignette
+        const vigGrad = ctx.createRadialGradient(
+            CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.3,
+            CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.7
+        );
+        vigGrad.addColorStop(0, 'rgba(0,0,0,0)');
+        vigGrad.addColorStop(1, 'rgba(0,0,0,0.5)');
+        ctx.fillStyle = vigGrad;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Cool blue overlay
+        ctx.fillStyle = 'rgba(50, 100, 150, 0.06)';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Boss name bar
+        if (this.polarBoss.alive) {
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(CANVAS_WIDTH / 2 - 140, 10, 280, 30);
+            ctx.fillStyle = '#88DDFF';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Tommy the Polar Bear', CANVAS_WIDTH / 2, 32);
+        }
+
+        // Player HP
+        const phx = CANVAS_WIDTH / 2 - 100;
+        const phy = CANVAS_HEIGHT - 40;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(phx, phy, 200, 16);
+        const phpct = this.player.health / this.player.maxHealth;
+        ctx.fillStyle = phpct > 0.5 ? '#44CC44' : phpct > 0.25 ? '#CCCC44' : '#CC4444';
+        ctx.fillRect(phx, phy, 200 * phpct, 16);
+        ctx.strokeStyle = '#FFF';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(phx, phy, 200, 16);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`HP: ${Math.ceil(this.player.health)} / ${this.player.maxHealth}`, CANVAS_WIDTH / 2, phy + 13);
+
+        // Inventory
+        this.hud.drawInventoryBar(ctx, this.player, this.input);
+        if (this.player.weapon) {
+            ctx.fillStyle = this.player.weapon.color;
+            ctx.font = 'bold 13px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.player.weapon.name, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 78);
+        }
+
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.font = '11px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Press ESC to flee', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 55);
+
+        if (this.hud.notificationTimer > 0) {
+            ctx.globalAlpha = Math.min(1, this.hud.notificationTimer);
+            ctx.fillStyle = this.hud.notificationColor;
+            ctx.font = 'bold 18px Arial';
+            ctx.fillText(this.hud.notification, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 100);
+            ctx.globalAlpha = 1;
+        }
+    }
+
+    // ==================== LAVA MONSTER FIGHT ====================
+
+    enterVolcanoLair() {
+        this.inCave = true;
+        this.state = 'LAVA_FIGHT';
+        this.music.play('boss');
+        this.lavaBoss = new LavaBoss(VOLCANO_LAIR_WIDTH / 2, 180);
+        this.lavaBoss.activate();
+        this.player.x = VOLCANO_LAIR_WIDTH / 2;
+        this.player.y = VOLCANO_LAIR_HEIGHT - 80;
+        this.lavaProjectiles = [];
+        this.lavaParticles = [];
+        this._lavaCamera = this._makeRoomCamera(VOLCANO_LAIR_WIDTH, VOLCANO_LAIR_HEIGHT);
+    }
+
+    exitVolcanoLair() {
+        this.inCave = false;
+        this.state = 'PLAYING';
+        this.music.play('battle');
+        this.player.x = VOLCANO_LAIR_ENTRANCE.x;
+        this.player.y = VOLCANO_LAIR_ENTRANCE.y + 60;
+    }
+
+    updateLavaFight(dt) {
+        const cam = this._lavaCamera || this._makeRoomCamera(VOLCANO_LAIR_WIDTH, VOLCANO_LAIR_HEIGHT);
+        this._lavaCamera = cam;
+
+        // Player movement
+        let mx = 0, my = 0;
+        if (this.input.isKeyDown('w') || this.input.isKeyDown('arrowup'))    { mx -= 1; my -= 1; }
+        if (this.input.isKeyDown('s') || this.input.isKeyDown('arrowdown'))  { mx += 1; my += 1; }
+        if (this.input.isKeyDown('a') || this.input.isKeyDown('arrowleft'))  { mx -= 1; my += 1; }
+        if (this.input.isKeyDown('d') || this.input.isKeyDown('arrowright')) { mx += 1; my -= 1; }
+        const mLen = Math.sqrt(mx * mx + my * my);
+        if (mLen > 0) { mx /= mLen; my /= mLen; }
+        this.player.vx = mx * this.player.speed;
+        this.player.vy = my * this.player.speed;
+        this.player.x += this.player.vx * dt;
+        this.player.y += this.player.vy * dt;
+        this.player.x = clamp(this.player.x, 30, VOLCANO_LAIR_WIDTH - 30);
+        this.player.y = clamp(this.player.y, 30, VOLCANO_LAIR_HEIGHT - 30);
+
+        if (Math.abs(this.player.vx) > 1 || Math.abs(this.player.vy) > 1) {
+            this.player.moveFacing = Math.atan2(this.player.vy, this.player.vx);
+            this.player.walkTimer += dt;
+        }
+
+        const worldMouse = cam.screenToWorld(this.input.mouseX, this.input.mouseY);
+        this.player.facing = angleBetween(this.player.x, this.player.y, worldMouse.x, worldMouse.y);
+
+        // Weapon switching
+        for (let i = 1; i <= 9; i++) {
+            if (this.input.isKeyDown(i.toString())) { this.player.switchToSlot(i - 1); this.input.keys[i.toString()] = false; }
+        }
+        const scroll = this.input.consumeScroll();
+        if (scroll !== 0) this.player.cycleWeapon(scroll > 0 ? 1 : -1);
+        if (this.player.weaponSwitched) {
+            this.player.weaponSwitched = false;
+            this.music.playSfx('weapon_switch');
+            if (this.player.weapon) this.hud.notify(`Switched to ${this.player.weapon.name}`, this.player.weapon.color, 1.2);
+        }
+
+        // Attack
+        const lavaEntities = [this.lavaBoss];
+        if (this.player.weapon && (this.input.mouseDown || this.input.isKeyDown(' '))) {
+            this.player.weapon.attack(this.player, lavaEntities, this.lavaProjectiles, this.lavaParticles);
+        }
+        for (const wpn of this.player.inventory) { wpn.update(dt); }
+        if (this.player.attackAnim > 0) { this.player.attackAnim -= dt * 4; if (this.player.attackAnim < 0) this.player.attackAnim = 0; }
+
+        // Update lava boss
+        this.lavaBoss.update(dt, this.player, this.lavaProjectiles, this.lavaParticles);
+
+        // Projectiles
+        for (const proj of this.lavaProjectiles) {
+            proj.update(dt);
+            if (proj.team === TEAMS.NEUTRAL && this.player.alive) {
+                if (circleCollision(proj.x, proj.y, proj.radius, this.player.x, this.player.y, this.player.radius)) {
+                    this.player.takeDamage(proj.damage, this.lavaBoss);
+                    spawnHitParticles(this.lavaParticles, this.player.x, this.player.y, '#FF4400', 5);
+                    this.lavaParticles.push(new DamageNumber(this.player.x, this.player.y - 10, proj.damage, '#FF4400'));
+                    proj.alive = false;
+                }
+            }
+            if (proj.team === TEAMS.BLUE && this.lavaBoss.alive) {
+                if (circleCollision(proj.x, proj.y, proj.radius, this.lavaBoss.x, this.lavaBoss.y, this.lavaBoss.radius)) {
+                    this.lavaBoss.takeDamage(proj.damage, this.player);
+                    spawnHitParticles(this.lavaParticles, this.lavaBoss.x, this.lavaBoss.y, '#FF6600', 5);
+                    this.lavaParticles.push(new DamageNumber(this.lavaBoss.x, this.lavaBoss.y - 10, proj.damage, '#FFAA44'));
+                    proj.alive = false;
+                }
+            }
+        }
+        this.lavaProjectiles = this.lavaProjectiles.filter(p => p.alive);
+
+        for (const p of this.lavaParticles) { p.update(dt); }
+        this.lavaParticles = this.lavaParticles.filter(p => p.alive || (p.life !== undefined && p.life > 0));
+
+        this.hud.update(dt);
+
+        // ESC to flee
+        if (this.input.isKeyDown('escape')) {
+            this.exitVolcanoLair();
+            this.hud.notify('Fled the Volcano!', '#FF6600', 2);
+            this.input.keys['escape'] = false;
+            return;
+        }
+
+        // Lava boss defeated
+        if (!this.lavaBoss.alive) {
+            this.lavaDefeated = true;
+            if (this.lavaBoss.deathTimer <= 0) {
+                this.exitVolcanoLair();
+                this.hud.notify('Paddy the Lava Monster defeated! +50 sticks! +100 XP!', '#FF6600', 3);
+                this.player.sticks += 50;
+                this.player.addXP(XP_PER_BOSS);
+            }
+        }
+
+        if (!this.player.alive) {
+            this.state = 'LOSE';
+            this.music.stop();
+            this.music.playSfx('player_death');
+        }
+    }
+
+    renderLavaFight() {
+        const ctx = this.ctx;
+        const cam = this._lavaCamera || this._makeRoomCamera(VOLCANO_LAIR_WIDTH, VOLCANO_LAIR_HEIGHT);
+
+        // Background
+        ctx.fillStyle = '#1a0800';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Volcanic rock floor
+        const roomCorners = [
+            cam.worldToScreen(0, 0),
+            cam.worldToScreen(VOLCANO_LAIR_WIDTH, 0),
+            cam.worldToScreen(VOLCANO_LAIR_WIDTH, VOLCANO_LAIR_HEIGHT),
+            cam.worldToScreen(0, VOLCANO_LAIR_HEIGHT)
+        ];
+        ctx.fillStyle = '#3A2A1A';
+        ctx.beginPath();
+        ctx.moveTo(roomCorners[0].x, roomCorners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(roomCorners[i].x, roomCorners[i].y);
+        ctx.closePath();
+        ctx.fill();
+
+        // Lava glow cracks in floor
+        ctx.strokeStyle = `rgba(255, 80, 0, ${0.3 + Math.sin(Date.now() / 500) * 0.1})`;
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 15; i++) {
+            const cx = Math.sin(i * 3.3) * VOLCANO_LAIR_WIDTH * 0.35 + VOLCANO_LAIR_WIDTH / 2;
+            const cy = Math.cos(i * 2.1) * VOLCANO_LAIR_HEIGHT * 0.35 + VOLCANO_LAIR_HEIGHT / 2;
+            const cp = cam.worldToScreen(cx, cy);
+            const angle = i * 1.7;
+            ctx.beginPath();
+            ctx.moveTo(cp.x, cp.y);
+            ctx.lineTo(cp.x + Math.cos(angle) * 25, cp.y + Math.sin(angle) * 15);
+            ctx.stroke();
+        }
+
+        // Rock walls
+        ctx.fillStyle = '#2A1A0A';
+        const tl = cam.worldToScreen(0, 0);
+        const tr = cam.worldToScreen(VOLCANO_LAIR_WIDTH, 0);
+        ctx.fillRect(Math.min(tl.x, tr.x), Math.min(tl.y, tr.y) - 50,
+            Math.abs(tr.x - tl.x), 50);
+
+        // Wall lava drips
+        ctx.fillStyle = '#FF4400';
+        for (let i = 0; i < 8; i++) {
+            const dx = Math.min(tl.x, tr.x) + (i + 0.5) * Math.abs(tr.x - tl.x) / 8;
+            const dy = Math.min(tl.y, tr.y) + Math.sin(Date.now() / 400 + i * 2) * 5;
+            ctx.beginPath();
+            ctx.ellipse(dx, dy, 2, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Ember particles floating up
+        ctx.fillStyle = 'rgba(255, 120, 0, 0.5)';
+        for (let i = 0; i < 20; i++) {
+            const ex = Math.sin(Date.now() / 1500 + i * 2.3) * VOLCANO_LAIR_WIDTH * 0.3 + VOLCANO_LAIR_WIDTH / 2;
+            const ey = VOLCANO_LAIR_HEIGHT - (Date.now() / 20 + i * 80) % VOLCANO_LAIR_HEIGHT;
+            const ep = cam.worldToScreen(ex, ey);
+            ctx.beginPath();
+            ctx.arc(ep.x, ep.y, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Draw lava boss
+        if (this.lavaBoss.alive || this.lavaBoss.deathTimer > 0) {
+            this.lavaBoss.draw(ctx, cam);
+        }
+
+        // Draw player
+        drawStickman(ctx, this.player, cam);
+
+        // Projectiles & particles
+        for (const proj of this.lavaProjectiles) { proj.draw(ctx, cam); }
+        for (const p of this.lavaParticles) { p.draw(ctx, cam); }
+
+        // Vignette
+        const vigGrad = ctx.createRadialGradient(
+            CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.3,
+            CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.7
+        );
+        vigGrad.addColorStop(0, 'rgba(0,0,0,0)');
+        vigGrad.addColorStop(1, 'rgba(0,0,0,0.6)');
+        ctx.fillStyle = vigGrad;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Hot red overlay
+        ctx.fillStyle = 'rgba(100, 30, 0, 0.06)';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Boss name bar
+        if (this.lavaBoss.alive) {
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(CANVAS_WIDTH / 2 - 150, 10, 300, 30);
+            ctx.fillStyle = '#FF6600';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Paddy the Lava Monster', CANVAS_WIDTH / 2, 32);
         }
 
         // Player HP

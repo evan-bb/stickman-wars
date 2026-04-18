@@ -31,7 +31,30 @@
       "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" auth login --web)",
       "Bash(git init:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git config:*)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" repo create stickman-wars --public --source=. --remote=origin --push)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" repo edit --enable-pages)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" api repos/evan-bb/stickman-wars/pages -X POST -f build_type=legacy -f source='{\"\"branch\"\":\"\"master\"\",\"\"path\"\":\"\"/\"\"}')",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" api repos/evan-bb/stickman-wars/pages -X POST --input - 2)",
+      "Bash(1:*)",
+      "Bash(node -e \"try { new Function\\(require\\('fs'\\).readFileSync\\('C:/Users/Evan/code/stickman-wars/js/boss.js','utf8'\\)\\); console.log\\('boss.js: syntax OK'\\); } catch\\(e\\) { console.log\\('boss.js:', e.message\\); }\")",
+      "Bash(node -e \"try { new Function\\(require\\('fs'\\).readFileSync\\('C:/Users/Evan/code/stickman-wars/js/game.js','utf8'\\)\\); console.log\\('game.js: syntax OK'\\); } catch\\(e\\) { console.log\\('game.js:', e.message\\); }\")",
+      "Bash(node -e \"try { new Function\\(require\\('fs'\\).readFileSync\\('C:/Users/Evan/code/stickman-wars/js/biome.js','utf8'\\)\\); console.log\\('biome.js: syntax OK'\\); } catch\\(e\\) { console.log\\('biome.js:', e.message\\); }\")",
+      "Bash(node -c /c/Users/Evan/code/stickman-wars/js/constants.js)",
+      "Bash(node -c /c/Users/Evan/code/stickman-wars/js/boss.js)",
+      "Bash(node -c /c/Users/Evan/code/stickman-wars/js/game.js)",
+      "Bash(node -c /c/Users/Evan/code/stickman-wars/js/biome.js)",
+      "Bash(node /c/Users/Evan/code/stickman-wars/server.js)",
+      "Bash(start http://localhost:3000)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(node -c /c/Users/Evan/code/stickman-wars/js/entity.js)",
+      "Bash(node -c /c/Users/Evan/code/stickman-wars/js/player.js)",
+      "Bash(node -c /c/Users/Evan/code/stickman-wars/js/hud.js)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)",
+      "Bash(git rebase:*)"
     ]
   }
 }

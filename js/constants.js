@@ -52,6 +52,16 @@ const SAND_CASTLE_ENTRANCE = { x: 1900, y: 2100, radius: 55 };
 const SAND_CASTLE_WIDTH = 800;
 const SAND_CASTLE_HEIGHT = 600;
 
+// Ice Castle entrance (arctic biome)
+const ICE_CASTLE_ENTRANCE = { x: 700, y: 2200, radius: 55 };
+const ICE_CASTLE_WIDTH = 800;
+const ICE_CASTLE_HEIGHT = 600;
+
+// Volcano Lair entrance (volcano biome)
+const VOLCANO_LAIR_ENTRANCE = { x: 3333, y: 2200, radius: 55 };
+const VOLCANO_LAIR_WIDTH = 800;
+const VOLCANO_LAIR_HEIGHT = 600;
+
 // Weapon definitions
 const WEAPON_DEFS = {
     WOODEN_SWORD: { name: 'Wooden Sword', damage: 15, range: 45, cooldown: 500, type: 'melee', color: '#8B6914' },
@@ -116,6 +126,28 @@ const CRAB_BOSS_CONFIG = {
     speed: 60,
     chargeSpeed: 240,
     bubbleSpeed: 160,
+    phase2Threshold: 0.5
+};
+
+const POLAR_BOSS_CONFIG = {
+    name: 'Tommy the Polar Bear',
+    health: 350,
+    damage: 18,
+    speed: 65,
+    chargeSpeed: 250,
+    icicleSpeed: 170,
+    freezeDuration: 1.2,
+    phase2Threshold: 0.5
+};
+
+const LAVA_BOSS_CONFIG = {
+    name: 'Paddy the Lava Monster',
+    health: 380,
+    damage: 16,
+    speed: 50,
+    magmaSpeed: 150,
+    eruptionRadius: 120,
+    burnDamage: 3,
     phase2Threshold: 0.5
 };
 

@@ -414,6 +414,14 @@ class BiomeRenderer {
         // Igloos
         this.props.push({ type: 'igloo', x: b.x + 500, y: b.y + 600 });
         this.props.push({ type: 'igloo', x: b.x + 1000, y: b.y + 1000 });
+
+        // Ice Castle (boss entrance)
+        this.props.push({
+            type: 'ice_castle',
+            x: ICE_CASTLE_ENTRANCE.x,
+            y: ICE_CASTLE_ENTRANCE.y,
+            w: 80, h: 65
+        });
     }
 
     generateBeach(b) {
@@ -588,6 +596,14 @@ class BiomeRenderer {
                 size: randomRange(15, 35)
             });
         }
+
+        // Volcano Lair entrance (cave opening in the volcano)
+        this.props.push({
+            type: 'volcano_lair',
+            x: VOLCANO_LAIR_ENTRANCE.x,
+            y: VOLCANO_LAIR_ENTRANCE.y,
+            sortOffset: -40
+        });
     }
 
     spawnEnvParticles() {
@@ -2224,6 +2240,121 @@ class BiomeRenderer {
                 ctx.fillStyle = '#DDAA44';
                 ctx.font = '9px Arial';
                 ctx.fillText('Press E to Enter', pos.x, pos.y + scFootH + 28);
+                break;
+            }
+
+            case 'ice_castle': {
+                const { x, y } = pos;
+                // Castle base
+                ctx.fillStyle = '#A0D0E8';
+                ctx.fillRect(x - 35, y - 30, 70, 50);
+                // Castle walls (frosted stone)
+                ctx.fillStyle = '#88C0D8';
+                ctx.fillRect(x - 38, y - 30, 76, 8);
+                // Towers
+                ctx.fillStyle = '#90C8E0';
+                ctx.fillRect(x - 40, y - 50, 18, 35);
+                ctx.fillRect(x + 22, y - 50, 18, 35);
+                // Tower tops (pointed)
+                ctx.fillStyle = '#70B0D0';
+                ctx.beginPath();
+                ctx.moveTo(x - 42, y - 50);
+                ctx.lineTo(x - 31, y - 65);
+                ctx.lineTo(x - 20, y - 50);
+                ctx.closePath();
+                ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(x + 20, y - 50);
+                ctx.lineTo(x + 31, y - 65);
+                ctx.lineTo(x + 42, y - 50);
+                ctx.closePath();
+                ctx.fill();
+                // Crenellations
+                ctx.fillStyle = '#A0D0E8';
+                for (let i = 0; i < 8; i++) {
+                    if (i % 2 === 0) ctx.fillRect(x - 38 + i * 9.5, y - 38, 9.5, 6);
+                }
+                // Gate (dark entrance)
+                ctx.fillStyle = '#1a2a3a';
+                ctx.beginPath();
+                ctx.moveTo(x - 12, y + 20);
+                ctx.lineTo(x - 12, y - 5);
+                ctx.arc(x, y - 5, 12, Math.PI, 0);
+                ctx.lineTo(x + 12, y + 20);
+                ctx.closePath();
+                ctx.fill();
+                // Icicles on gate
+                ctx.fillStyle = '#C0E8FF';
+                for (let i = 0; i < 5; i++) {
+                    const ix = x - 10 + i * 5;
+                    ctx.beginPath();
+                    ctx.moveTo(ix - 1, y - 15);
+                    ctx.lineTo(ix, y - 8);
+                    ctx.lineTo(ix + 1, y - 15);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                // Frost sparkles
+                ctx.fillStyle = `rgba(200, 240, 255, ${0.5 + Math.sin(Date.now() / 400) * 0.3})`;
+                ctx.beginPath();
+                ctx.arc(x - 25, y - 45, 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x + 25, y - 45, 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x, y - 55, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+                break;
+            }
+
+            case 'volcano_lair': {
+                const { x, y } = pos;
+                // Rocky volcanic cave entrance
+                // Outer rock arch
+                ctx.fillStyle = '#3A2A1A';
+                ctx.beginPath();
+                ctx.moveTo(x - 35, y + 25);
+                ctx.lineTo(x - 40, y - 10);
+                ctx.quadraticCurveTo(x - 30, y - 35, x, y - 40);
+                ctx.quadraticCurveTo(x + 30, y - 35, x + 40, y - 10);
+                ctx.lineTo(x + 35, y + 25);
+                ctx.closePath();
+                ctx.fill();
+                // Dark cave opening
+                ctx.fillStyle = '#0a0500';
+                ctx.beginPath();
+                ctx.moveTo(x - 22, y + 25);
+                ctx.lineTo(x - 25, y - 5);
+                ctx.quadraticCurveTo(x, y - 28, x + 25, y - 5);
+                ctx.lineTo(x + 22, y + 25);
+                ctx.closePath();
+                ctx.fill();
+                // Lava glow from inside
+                const lavaGlow = ctx.createRadialGradient(x, y + 5, 5, x, y + 5, 30);
+                lavaGlow.addColorStop(0, `rgba(255, 100, 0, ${0.4 + Math.sin(Date.now() / 300) * 0.15})`);
+                lavaGlow.addColorStop(1, 'rgba(255, 50, 0, 0)');
+                ctx.fillStyle = lavaGlow;
+                ctx.beginPath();
+                ctx.arc(x, y + 5, 30, 0, Math.PI * 2);
+                ctx.fill();
+                // Smoke wisps
+                ctx.fillStyle = `rgba(80, 80, 80, ${0.2 + Math.sin(Date.now() / 600) * 0.1})`;
+                for (let i = 0; i < 3; i++) {
+                    const sx = x + Math.sin(Date.now() / 800 + i * 2) * 10;
+                    const sy = y - 30 - i * 12 - Math.sin(Date.now() / 500 + i) * 5;
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, 5 + i * 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                // Lava drips on rocks
+                ctx.fillStyle = `rgba(255, 80, 0, ${0.6 + Math.sin(Date.now() / 250) * 0.2})`;
+                ctx.beginPath();
+                ctx.ellipse(x - 18, y + 10, 2, 4, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(x + 20, y + 5, 2, 3, 0, 0, Math.PI * 2);
+                ctx.fill();
                 break;
             }
 
