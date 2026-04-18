@@ -165,6 +165,10 @@ class Game {
                 this.music.init(); // First click starts AudioContext
                 this.initBattle('WOODEN_SWORD');
             }
+            // Check "Back to evanbb.com" button (top-left)
+            else if (mx > 20 && mx < 220 && my > 20 && my < 56) {
+                window.location.href = 'https://evanbb.com';
+            }
         }
     }
 
@@ -185,6 +189,17 @@ class Game {
         for (const s of this.menuStickmen) {
             drawStickman(ctx, s, fakeCamera);
         }
+
+        // Back to evanbb.com button (top-left)
+        ctx.fillStyle = '#2a2a4a';
+        ctx.fillRect(20, 20, 200, 36);
+        ctx.strokeStyle = '#4488FF';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(20, 20, 200, 36);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('← Back to evanbb.com', 120, 42);
 
         // Title
         ctx.fillStyle = '#FFF';
