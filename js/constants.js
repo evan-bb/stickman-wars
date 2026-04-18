@@ -200,6 +200,20 @@ const XP_PER_STICK = 0.5;
 const XP_PER_SURVIVAL_SEC = 0.5;
 const XP_BASE = 100;       // XP needed for level 2
 const XP_GROWTH = 1.4;     // each level needs 1.4x more XP
+const MAX_LEVEL = 20;
+
+// Cumulative XP required to reach each level. XP_LEVELS[n] = total XP for level n.
+const XP_LEVELS = (() => {
+    const levels = [0];
+    let cumulative = 0;
+    let cost = XP_BASE;
+    for (let i = 1; i <= MAX_LEVEL; i++) {
+        cumulative += cost;
+        levels.push(Math.floor(cumulative));
+        cost *= XP_GROWTH;
+    }
+    return levels;
+})();
 
 // Stick magnet config
 const STICK_MAGNET_RANGE = 80;
