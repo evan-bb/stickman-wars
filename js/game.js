@@ -2659,6 +2659,7 @@ class Game {
         ctx.fillText('You have fallen in battle.', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 30);
 
         this.renderStats(ctx);
+        this.renderBackToEvanbbButton(ctx);
         this.renderReplayButton(ctx);
     }
 
@@ -2752,6 +2753,31 @@ class Game {
             const my = this.input.mouseY;
             if (mx > bx && mx < bx + 160 && my > by && my < by + 40) {
                 this.initBattle('WOODEN_SWORD');
+            }
+        }
+    }
+
+    renderBackToEvanbbButton(ctx) {
+        const bw = 200, bh = 36;
+        const bx = CANVAS_WIDTH / 2 - bw / 2;
+        const by = CANVAS_HEIGHT / 2 + 205;
+        ctx.fillStyle = '#2a2a4a';
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeStyle = '#4488FF';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx, by, bw, bh);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('← Back to evanbb.com', CANVAS_WIDTH / 2, by + 22);
+
+        // Peek click state; only consume if this button was hit, so replay can still handle its own clicks.
+        if (this.input.mouseClicked) {
+            const mx = this.input.mouseX;
+            const my = this.input.mouseY;
+            if (mx > bx && mx < bx + bw && my > by && my < by + bh) {
+                this.input.mouseClicked = false;
+                window.location.href = 'https://evanbb.com';
             }
         }
     }
