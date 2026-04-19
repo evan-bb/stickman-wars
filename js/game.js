@@ -961,9 +961,10 @@ class Game {
         // Convert storm center to screen space
         const center = this.camera.worldToScreen(s.centerX, s.centerY);
 
-        // The safe radius in screen pixels (iso projection makes it roughly 1:1 in screen)
-        // Since iso squishes Y by 0.5, draw as ellipse
-        const screenR = s.radius;
+        // Iso-projected ellipse dimensions so visual storm edge matches world damage boundary.
+        // A world circle of radius r maps to a screen ellipse with semi-axes (r*√2, r/√2).
+        const screenRX = s.radius * Math.SQRT2;
+        const screenRY = s.radius / Math.SQRT2;
 
         // Draw full-screen storm overlay with circle cut-out
         ctx.fillStyle = 'rgba(80, 30, 120, 0.35)';
@@ -972,8 +973,8 @@ class Game {
         ctx.beginPath();
         ctx.rect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
         // Cut out the safe zone (ellipse for iso view)
-        ctx.moveTo(center.x + screenR, center.y);
-        ctx.ellipse(center.x, center.y, screenR, screenR * 0.5, 0, 0, Math.PI * 2, true); // counter-clockwise to cut
+        ctx.moveTo(center.x + screenRX, center.y);
+        ctx.ellipse(center.x, center.y, screenRX, screenRY, 0, 0, Math.PI * 2, true); // counter-clockwise to cut
         ctx.fill('evenodd');
 
         // Storm edge glow (pulsing)
@@ -981,14 +982,14 @@ class Game {
         ctx.strokeStyle = `rgba(160, 80, 220, ${pulse})`;
         ctx.lineWidth = 4;
         ctx.beginPath();
-        ctx.ellipse(center.x, center.y, screenR, screenR * 0.5, 0, 0, Math.PI * 2);
+        ctx.ellipse(center.x, center.y, screenRX, screenRY, 0, 0, Math.PI * 2);
         ctx.stroke();
 
         // Inner edge (brighter)
         ctx.strokeStyle = `rgba(200, 120, 255, ${pulse * 0.6})`;
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.ellipse(center.x, center.y, screenR - 3, screenR * 0.5 - 1.5, 0, 0, Math.PI * 2);
+        ctx.ellipse(center.x, center.y, screenRX - 3, screenRY - 2, 0, 0, Math.PI * 2);
         ctx.stroke();
 
         // Lightning-like particles at the edge
@@ -996,8 +997,8 @@ class Game {
         ctx.lineWidth = 1;
         for (let i = 0; i < 12; i++) {
             const a = (i / 12) * Math.PI * 2 + this.gameTime * 0.5;
-            const ex = center.x + Math.cos(a) * screenR;
-            const ey = center.y + Math.sin(a) * screenR * 0.5;
+            const ex = center.x + Math.cos(a) * screenRX;
+            const ey = center.y + Math.sin(a) * screenRY;
             const jitter = Math.sin(this.gameTime * 10 + i * 3) * 8;
             ctx.beginPath();
             ctx.moveTo(ex, ey);
