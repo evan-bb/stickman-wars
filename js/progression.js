@@ -39,13 +39,16 @@ class ProgressionSystem {
     }
 
     xpProgress() {
+        // At max level, bar is full
+        if (this.level >= MAX_LEVEL) return 1;
         let remaining = this.xp;
         let lvl = 1;
         while (lvl < this.level) {
             remaining -= this.xpForLevel(lvl);
             lvl++;
         }
-        return remaining / this.xpForLevel(this.level);
+        const pct = remaining / this.xpForLevel(this.level);
+        return Math.max(0, Math.min(1, pct));
     }
 
     addXP(amount) {
@@ -225,31 +228,29 @@ class ProgressionSystem {
     }
 
     drawXPBar(ctx) {
-        const barW = 120;
-        const barH = 5;
+        const barW = 140;
+        const barH = 7;
         const bx = 20;
-        const by = 88;
+        const by = 78;
 
         // Level badge
         ctx.fillStyle = '#FFD700';
-        ctx.font = 'bold 11px Arial';
+        ctx.font = 'bold 12px Arial';
         ctx.textAlign = 'left';
-        ctx.fillText('Lv.' + this.level, bx, by);
+        ctx.fillText('Lv ' + this.level, bx, by + 6);
 
-        // XP bar background
-        const barStartX = bx + 30;
-        ctx.fillStyle = '#333';
-        ctx.fillRect(barStartX, by - 6, barW, barH);
+        // XP bar
+        const barStartX = bx + 36;
+        ctx.fillStyle = 'rgba(40, 40, 40, 0.8)';
+        ctx.fillRect(barStartX, by, barW, barH);
 
-        // XP bar fill
         const pct = this.xpProgress();
         ctx.fillStyle = '#FFD700';
-        ctx.fillRect(barStartX, by - 6, barW * pct, barH);
+        ctx.fillRect(barStartX, by, barW * pct, barH);
 
-        // XP bar border
-        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-        ctx.lineWidth = 0.5;
-        ctx.strokeRect(barStartX, by - 6, barW, barH);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barStartX, by, barW, barH);
     }
 
     drawHat(ctx, x, headY, hat) {

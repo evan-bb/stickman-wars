@@ -597,47 +597,36 @@ class Game {
         ctx.textAlign = 'center';
         ctx.fillText('Choose Your Starter Weapon', CANVAS_WIDTH / 2, 60);
 
-        // Player level display
-        const savedXP = parseInt(localStorage.getItem('stickman_xp') || '0');
-        let playerLevel = 0;
-        for (let i = 1; i < XP_LEVELS.length; i++) {
-            if (savedXP >= XP_LEVELS[i]) playerLevel = i;
-            else break;
-        }
-        if (savedXP >= XP_LEVELS[XP_LEVELS.length - 1]) playerLevel = XP_LEVELS.length - 1;
+        // Player level display from progression system
+        const prog = this.progression;
 
-        // Level badge
         ctx.fillStyle = '#FFD700';
         ctx.font = 'bold 22px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(`Level ${playerLevel}`, CANVAS_WIDTH / 2, 95);
+        ctx.fillText(`Level ${prog.level}`, CANVAS_WIDTH / 2, 95);
 
         // XP bar
         const xpBarW = 200, xpBarH = 10;
         const xpBarX = CANVAS_WIDTH / 2 - xpBarW / 2;
         const xpBarY = 102;
-        ctx.fillStyle = '#333';
+        ctx.fillStyle = '#222';
         ctx.fillRect(xpBarX, xpBarY, xpBarW, xpBarH);
-        let xpPct = 1;
-        if (playerLevel < XP_LEVELS.length - 1) {
-            const curLvlXP = XP_LEVELS[playerLevel];
-            const nxtLvlXP = XP_LEVELS[playerLevel + 1];
-            xpPct = (savedXP - curLvlXP) / (nxtLvlXP - curLvlXP);
-        }
-        ctx.fillStyle = '#FFD700';
-        ctx.fillRect(xpBarX, xpBarY, xpBarW * xpPct, xpBarH);
-        ctx.strokeStyle = '#555';
+        const grad = ctx.createLinearGradient(xpBarX, xpBarY, xpBarX + xpBarW, xpBarY);
+        grad.addColorStop(0, '#FFC800');
+        grad.addColorStop(1, '#FFE680');
+        ctx.fillStyle = grad;
+        ctx.fillRect(xpBarX, xpBarY, xpBarW * prog.xpProgress(), xpBarH);
+        ctx.strokeStyle = '#FFF';
         ctx.lineWidth = 1;
         ctx.strokeRect(xpBarX, xpBarY, xpBarW, xpBarH);
 
         // XP text
+        let xpInLevel = prog.xp;
+        let lvl = 1;
+        while (lvl < prog.level) { xpInLevel -= prog.xpForLevel(lvl); lvl++; }
         ctx.fillStyle = '#AAA';
         ctx.font = '11px Arial';
-        if (playerLevel < XP_LEVELS.length - 1) {
-            ctx.fillText(`${savedXP} / ${XP_LEVELS[playerLevel + 1]} XP`, CANVAS_WIDTH / 2, xpBarY + xpBarH + 14);
-        } else {
-            ctx.fillText(`${savedXP} XP (MAX LEVEL)`, CANVAS_WIDTH / 2, xpBarY + xpBarH + 14);
-        }
+        ctx.fillText(`${Math.floor(xpInLevel)} / ${prog.xpToNextLevel()} XP`, CANVAS_WIDTH / 2, xpBarY + xpBarH + 14);
 
         const weapons = [
             { key: 'WOODEN_SWORD', desc: 'Balanced melee weapon.\nGood range and speed.' },

@@ -13,10 +13,6 @@ class Player extends Entity {
         this.inventory = []; // array of Weapon objects
         this.activeSlot = 0; // index into inventory
 
-        // XP / Level (persisted in localStorage)
-        this.xp = parseInt(localStorage.getItem('stickman_xp') || '0');
-        this.level = this.calcLevel();
-
         // Sprint
         this.stamina = 100;
         this.maxStamina = 100;
@@ -137,36 +133,18 @@ class Player extends Entity {
         }
     }
 
-    calcLevel() {
-        let lvl = 0;
-        for (let i = 1; i < XP_LEVELS.length; i++) {
-            if (this.xp >= XP_LEVELS[i]) lvl = i;
-            else break;
-        }
-        // Beyond max defined level
-        if (this.xp >= XP_LEVELS[XP_LEVELS.length - 1]) lvl = XP_LEVELS.length - 1;
-        return lvl;
-    }
-
+    // Forward XP to the global progression system
     addXP(amount) {
-        const oldLevel = this.level;
-        this.xp += amount;
-        localStorage.setItem('stickman_xp', this.xp.toString());
-        this.level = this.calcLevel();
-        if (this.level > oldLevel) {
-            this.leveledUp = true;
+        if (window.game && window.game.progression) {
+            const before = window.game.progression.level;
+            window.game.progression.addXP(amount);
+            if (window.game.progression.level > before) {
+                this.leveledUp = true;
+            }
         }
     }
 
-    getXPProgress() {
-        if (this.level >= XP_LEVELS.length - 1) return 1; // max level
-        const currentLevelXP = XP_LEVELS[this.level];
-        const nextLevelXP = XP_LEVELS[this.level + 1];
-        return (this.xp - currentLevelXP) / (nextLevelXP - currentLevelXP);
-    }
-
-    getXPToNext() {
-        if (this.level >= XP_LEVELS.length - 1) return 0;
-        return XP_LEVELS[this.level + 1] - this.xp;
+    get level() {
+        return window.game && window.game.progression ? window.game.progression.level : 1;
     }
 }
