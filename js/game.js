@@ -108,6 +108,7 @@ class Game {
 
         switch (this.state) {
             case 'MENU': this.updateMenu(dt); break;
+            case 'COSMETICS': this.updateCosmetics(dt); break;
             case 'WEAPON_SELECT': break;
             case 'COUNTDOWN': this.updateCountdown(dt); break;
             case 'PLAYING': this.updatePlaying(dt); break;
@@ -126,6 +127,7 @@ class Game {
 
         switch (this.state) {
             case 'MENU': this.renderMenu(); break;
+            case 'COSMETICS': this.renderCosmetics(); break;
             case 'WEAPON_SELECT': this.renderWeaponSelect(); break;
             case 'COUNTDOWN': this.renderPlaying(); this.renderCountdown(); break;
             case 'PLAYING': this.renderPlaying(); break;
@@ -164,6 +166,12 @@ class Game {
                 my > CANVAS_HEIGHT / 2 + 20 && my < CANVAS_HEIGHT / 2 + 60) {
                 this.music.init(); // First click starts AudioContext
                 this.initBattle('WOODEN_SWORD');
+            }
+            // Cosmetics button (under start)
+            else if (mx > CANVAS_WIDTH / 2 - 80 && mx < CANVAS_WIDTH / 2 + 80 &&
+                my > CANVAS_HEIGHT / 2 + 150 && my < CANVAS_HEIGHT / 2 + 186) {
+                this.music.init();
+                this.state = 'COSMETICS';
             }
             // Check "Back to evanbb.com" button (top-left)
             else if (mx > 20 && mx < 220 && my > 20 && my < 56) {
@@ -258,36 +266,20 @@ class Game {
             ctx.fillText('Equipped: ' + cosmeticParts.join(', '), CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 124);
         }
 
-        // Hat/Trail cycle with Q and T keys
-        if (this.input.isKeyDown('q')) {
-            this.input.keys['q'] = false;
-            const hats = prog.getUnlockedHats();
-            const idx = hats.findIndex(h => h.key === prog.equippedHat);
-            const next = hats[(idx + 1) % hats.length];
-            prog.equippedHat = next.key;
-            prog.save();
-        }
-        if (this.input.isKeyDown('t')) {
-            this.input.keys['t'] = false;
-            const trails = prog.getUnlockedTrails();
-            if (trails.length > 0) {
-                const current = trails.findIndex(t => t.key === prog.equippedTrail);
-                if (current === -1) {
-                    prog.equippedTrail = trails[0].key;
-                } else {
-                    const nextIdx = (current + 1) % (trails.length + 1);
-                    prog.equippedTrail = nextIdx < trails.length ? trails[nextIdx].key : 'none';
-                }
-                prog.save();
-            }
-        }
-
-        // Cosmetic cycle hint
-        if (prog.level >= 2) {
-            ctx.fillStyle = '#555';
-            ctx.font = '11px Arial';
-            ctx.fillText('Q: cycle hats  |  T: cycle trails', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 60);
-        }
+        // Cosmetics button
+        const cosBtnX = CANVAS_WIDTH / 2 - 80;
+        const cosBtnY = CANVAS_HEIGHT / 2 + 150;
+        const cosMx = this.input.mouseX, cosMy = this.input.mouseY;
+        const cosHover = cosMx > cosBtnX && cosMx < cosBtnX + 160 && cosMy > cosBtnY && cosMy < cosBtnY + 36;
+        ctx.fillStyle = cosHover ? '#5a4aaa' : '#3a2a88';
+        ctx.fillRect(cosBtnX, cosBtnY, 160, 36);
+        ctx.strokeStyle = '#8866CC';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(cosBtnX, cosBtnY, 160, 36);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('🎩 COSMETICS', CANVAS_WIDTH / 2, cosBtnY + 23);
 
         // Controls info
         ctx.fillStyle = '#666';
@@ -297,6 +289,300 @@ class Game {
         } else {
             ctx.fillText('WASD to move | Mouse to aim | Click/Space to attack | E to interact', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 40);
         }
+    }
+
+    // ==================== COSMETICS ====================
+
+    updateCosmetics(dt) {
+        // Keep menu stickmen animating for visual continuity
+        for (const s of this.menuStickmen) {
+            s.x += s.vx * dt;
+            s.y += s.vy * dt;
+            s.walkTimer += dt;
+            if (s.x < 50 || s.x > CANVAS_WIDTH - 50) s.vx *= -1;
+            if (s.y < 150 || s.y > CANVAS_HEIGHT - 50) s.vy *= -1;
+            s.facing = Math.atan2(s.vy, s.vx);
+        }
+
+        // Back to menu on ESC
+        if (this.input.isKeyDown('escape')) {
+            this.input.keys['escape'] = false;
+            this.state = 'MENU';
+        }
+
+        if (!this.input.consumeClick()) return;
+        const mx = this.input.mouseX, my = this.input.mouseY;
+        const prog = this.progression;
+
+        // Back button (top-left)
+        if (mx > 20 && mx < 120 && my > 20 && my < 56) {
+            this.state = 'MENU';
+            return;
+        }
+
+        // Build cosmetic grids (same layout as render)
+        const hats = LEVEL_UNLOCKS.filter(u => u.type === 'hat');
+        const trails = LEVEL_UNLOCKS.filter(u => u.type === 'trail');
+
+        const tileW = 90, tileH = 110, gap = 14;
+        const cols = 6;
+
+        // Hats grid
+        const hatsStartY = 130;
+        const hatsRowW = Math.min(hats.length, cols) * tileW + (Math.min(hats.length, cols) - 1) * gap;
+        const hatsStartX = (CANVAS_WIDTH - hatsRowW) / 2;
+        for (let i = 0; i < hats.length; i++) {
+            const col = i % cols, row = Math.floor(i / cols);
+            const tx = hatsStartX + col * (tileW + gap);
+            const ty = hatsStartY + row * (tileH + gap);
+            if (mx > tx && mx < tx + tileW && my > ty && my < ty + tileH) {
+                if (prog.level >= hats[i].level) {
+                    prog.equippedHat = (prog.equippedHat === hats[i].key) ? 'none' : hats[i].key;
+                    prog.save();
+                }
+                return;
+            }
+        }
+
+        // Trails grid
+        const hatsRows = Math.ceil(hats.length / cols);
+        const trailsStartY = hatsStartY + hatsRows * (tileH + gap) + 60;
+        const trailsRowW = Math.min(trails.length, cols) * tileW + (Math.min(trails.length, cols) - 1) * gap;
+        const trailsStartX = (CANVAS_WIDTH - trailsRowW) / 2;
+        for (let i = 0; i < trails.length; i++) {
+            const col = i % cols, row = Math.floor(i / cols);
+            const tx = trailsStartX + col * (tileW + gap);
+            const ty = trailsStartY + row * (tileH + gap);
+            if (mx > tx && mx < tx + tileW && my > ty && my < ty + tileH) {
+                if (prog.level >= trails[i].level) {
+                    prog.equippedTrail = (prog.equippedTrail === trails[i].key) ? 'none' : trails[i].key;
+                    prog.save();
+                }
+                return;
+            }
+        }
+    }
+
+    renderCosmetics() {
+        const ctx = this.ctx;
+        const prog = this.progression;
+
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Back button
+        const mx = this.input.mouseX, my = this.input.mouseY;
+        const backHover = mx > 20 && mx < 120 && my > 20 && my < 56;
+        ctx.fillStyle = backHover ? '#3a3a5a' : '#2a2a4a';
+        ctx.fillRect(20, 20, 100, 36);
+        ctx.strokeStyle = '#4488FF';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(20, 20, 100, 36);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('← Back', 70, 42);
+
+        // Title
+        ctx.fillStyle = '#FFD700';
+        ctx.font = 'bold 36px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('COSMETICS', CANVAS_WIDTH / 2, 60);
+
+        ctx.fillStyle = '#AAA';
+        ctx.font = '13px Arial';
+        ctx.fillText(`Your Level: ${prog.level}  |  Click an item to equip/unequip`, CANVAS_WIDTH / 2, 82);
+
+        const hats = LEVEL_UNLOCKS.filter(u => u.type === 'hat');
+        const trails = LEVEL_UNLOCKS.filter(u => u.type === 'trail');
+
+        const tileW = 90, tileH = 110, gap = 14;
+        const cols = 6;
+
+        // ====== HATS SECTION ======
+        const hatsStartY = 130;
+        const hatsRowW = Math.min(hats.length, cols) * tileW + (Math.min(hats.length, cols) - 1) * gap;
+        const hatsStartX = (CANVAS_WIDTH - hatsRowW) / 2;
+
+        // Section header
+        ctx.fillStyle = '#88AAFF';
+        ctx.font = 'bold 18px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('🎩 Hats', hatsStartX, hatsStartY - 12);
+
+        for (let i = 0; i < hats.length; i++) {
+            const col = i % cols, row = Math.floor(i / cols);
+            const tx = hatsStartX + col * (tileW + gap);
+            const ty = hatsStartY + row * (tileH + gap);
+            this._drawCosmeticTile(ctx, tx, ty, tileW, tileH, hats[i], 'hat', prog, mx, my);
+        }
+
+        // ====== TRAILS SECTION ======
+        const hatsRows = Math.ceil(hats.length / cols);
+        const trailsStartY = hatsStartY + hatsRows * (tileH + gap) + 60;
+        const trailsRowW = Math.min(trails.length, cols) * tileW + (Math.min(trails.length, cols) - 1) * gap;
+        const trailsStartX = (CANVAS_WIDTH - trailsRowW) / 2;
+
+        ctx.fillStyle = '#88AAFF';
+        ctx.font = 'bold 18px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('✨ Trails', trailsStartX, trailsStartY - 12);
+
+        for (let i = 0; i < trails.length; i++) {
+            const col = i % cols, row = Math.floor(i / cols);
+            const tx = trailsStartX + col * (tileW + gap);
+            const ty = trailsStartY + row * (tileH + gap);
+            this._drawCosmeticTile(ctx, tx, ty, tileW, tileH, trails[i], 'trail', prog, mx, my);
+        }
+
+        // Hint at bottom
+        ctx.fillStyle = '#666';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Locked items show the level required. ESC to go back.', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 30);
+    }
+
+    _drawCosmeticTile(ctx, tx, ty, tw, th, item, type, prog, mx, my) {
+        const unlocked = prog.level >= item.level;
+        const equipped = type === 'hat' ? prog.equippedHat === item.key : prog.equippedTrail === item.key;
+        const hover = unlocked && mx > tx && mx < tx + tw && my > ty && my < ty + th;
+
+        // Tile background
+        if (equipped) {
+            ctx.fillStyle = '#3d5a3d';
+            ctx.strokeStyle = '#44FF44';
+            ctx.lineWidth = 3;
+        } else if (hover) {
+            ctx.fillStyle = '#2a2a4e';
+            ctx.strokeStyle = '#AAAAFF';
+            ctx.lineWidth = 2;
+        } else if (unlocked) {
+            ctx.fillStyle = '#222244';
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 1;
+        } else {
+            ctx.fillStyle = '#1a1a2a';
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+        }
+        ctx.fillRect(tx, ty, tw, th);
+        ctx.strokeRect(tx, ty, tw, th);
+
+        // Icon area — draw a mini stickman head with the cosmetic
+        const iconCx = tx + tw / 2;
+        const iconCy = ty + 45;
+        ctx.save();
+        if (!unlocked) ctx.globalAlpha = 0.3;
+
+        if (type === 'hat') {
+            // Draw a small head for context
+            ctx.strokeStyle = '#CCC';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(iconCx, iconCy, 10, 0, Math.PI * 2);
+            ctx.stroke();
+            // Body hint
+            ctx.beginPath();
+            ctx.moveTo(iconCx, iconCy + 10);
+            ctx.lineTo(iconCx, iconCy + 22);
+            ctx.stroke();
+            // The hat itself — use progression's drawHat helper
+            if (item.key !== 'none') {
+                prog.drawHat(ctx, iconCx, iconCy - 10, item.key);
+            } else {
+                ctx.fillStyle = '#888';
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('(no hat)', iconCx, iconCy);
+            }
+        } else {
+            // Trail preview: draw a small stickman with trail particles
+            ctx.strokeStyle = '#CCC';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(iconCx, iconCy, 8, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(iconCx, iconCy + 8);
+            ctx.lineTo(iconCx, iconCy + 20);
+            ctx.stroke();
+            // Mini trail preview
+            if (item.key !== 'none') {
+                this._drawMiniTrail(ctx, iconCx, iconCy + 22, item.key);
+            } else {
+                ctx.fillStyle = '#888';
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('(no trail)', iconCx, iconCy);
+            }
+        }
+        ctx.restore();
+
+        // Name
+        ctx.fillStyle = unlocked ? '#FFF' : '#666';
+        ctx.font = 'bold 11px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(item.name, iconCx, ty + 82);
+
+        // Level requirement or status
+        if (!unlocked) {
+            ctx.fillStyle = '#FF6666';
+            ctx.font = '10px Arial';
+            ctx.fillText(`🔒 Level ${item.level}`, iconCx, ty + 98);
+        } else if (equipped) {
+            ctx.fillStyle = '#44FF44';
+            ctx.font = 'bold 10px Arial';
+            ctx.fillText('✓ EQUIPPED', iconCx, ty + 98);
+        } else {
+            ctx.fillStyle = '#888';
+            ctx.font = '10px Arial';
+            ctx.fillText(item.level === 1 ? 'Default' : `Lv ${item.level}`, iconCx, ty + 98);
+        }
+    }
+
+    _drawMiniTrail(ctx, cx, cy, trail) {
+        // Simple static trail sample, not animated
+        switch (trail) {
+            case 'dust':
+                ctx.fillStyle = '#AA9977';
+                for (let i = 0; i < 3; i++) {
+                    ctx.globalAlpha = 0.5 - i * 0.12;
+                    ctx.beginPath();
+                    ctx.arc(cx + (i - 1) * 4, cy + i * 3, 3 - i * 0.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                break;
+            case 'fire':
+                const fireColors = ['#FFCC00', '#FF8800', '#FF4400'];
+                for (let i = 0; i < 3; i++) {
+                    ctx.globalAlpha = 0.7 - i * 0.15;
+                    ctx.fillStyle = fireColors[i];
+                    ctx.beginPath();
+                    ctx.arc(cx + (i - 1) * 3, cy + i * 3, 3.5 - i * 0.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                break;
+            case 'sparkle':
+                ctx.fillStyle = '#FFFFFF';
+                for (let i = 0; i < 4; i++) {
+                    ctx.globalAlpha = 0.8 - i * 0.15;
+                    ctx.beginPath();
+                    ctx.arc(cx + (Math.random() - 0.5) * 10, cy + i * 2, 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                break;
+            case 'rainbow':
+                const rainbowColors = ['#FF0000', '#FF7700', '#FFFF00', '#00FF00', '#0077FF', '#8800FF'];
+                for (let i = 0; i < 6; i++) {
+                    ctx.globalAlpha = 0.7;
+                    ctx.fillStyle = rainbowColors[i];
+                    ctx.beginPath();
+                    ctx.arc(cx + (i - 2.5) * 3, cy + 2, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                break;
+        }
+        ctx.globalAlpha = 1;
     }
 
     // ==================== WEAPON SELECT ====================
