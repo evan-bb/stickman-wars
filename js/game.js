@@ -103,6 +103,7 @@ class Game {
     }
 
     update(dt) {
+        this._lastDt = dt;
         // Update music system
         this.music.update(dt);
 
@@ -1550,14 +1551,15 @@ class Game {
 
         // Boss defeated
         if (!this.boss.alive) {
-            this.bossDefeated = true;
-            if (this.boss.deathTimer <= 0) {
-                this.exitCave();
-                this.hud.notify('Luca defeated! +50 sticks, +100 XP, Web Sword!', '#CC44CC', 4);
+            if (!this.bossDefeated) {
+                // First frame after death: award sticks/XP, spawn pickup
+                this.bossDefeated = true;
                 this.player.sticks += 50;
                 this.player.addXP(XP_PER_BOSS);
-                this.player.addWeapon('WEB_SWORD');
+                this.hud.notify('Luca defeated! Pick up the Web Sword!', '#CC44CC', 3);
+                this.bossPickup = new WeaponPickup(CAVE_WIDTH / 2, CAVE_HEIGHT / 2, 'WEB_SWORD');
             }
+            this._handleBossPickup('bossPickup', () => this.exitCave());
         }
 
         // Player died
@@ -1701,14 +1703,14 @@ class Game {
 
         // Ghost defeated
         if (!this.ghostBoss.alive) {
-            this.ghostDefeated = true;
-            if (this.ghostBoss.deathTimer <= 0) {
-                this.exitHauntedHouse();
-                this.hud.notify('James defeated! +50 sticks, +100 XP, Ghost Sword!', '#88CCFF', 4);
+            if (!this.ghostDefeated) {
+                this.ghostDefeated = true;
                 this.player.sticks += 50;
                 this.player.addXP(XP_PER_BOSS);
-                this.player.addWeapon('GHOST_SWORD');
+                this.hud.notify('James defeated! Pick up the Ghost Sword!', '#88CCFF', 3);
+                this.ghostPickup = new WeaponPickup(HAUNTED_WIDTH / 2, HAUNTED_HEIGHT / 2, 'GHOST_SWORD');
             }
+            this._handleBossPickup('ghostPickup', () => this.exitHauntedHouse());
         }
 
         // Player died
@@ -1839,6 +1841,9 @@ class Game {
         for (const p of this.ghostParticles) {
             p.draw(ctx, cam);
         }
+
+        // Weapon pickup
+        if (this.ghostPickup && !this.ghostPickup.collected) this.ghostPickup.draw(ctx, cam);
 
         // Vignette
         const vigGrad = ctx.createRadialGradient(
@@ -2017,14 +2022,14 @@ class Game {
 
         // Crab defeated
         if (!this.crabBoss.alive) {
-            this.crabDefeated = true;
-            if (this.crabBoss.deathTimer <= 0) {
-                this.exitSandCastle();
-                this.hud.notify('Charlie defeated! +50 sticks, +100 XP, Sand Sword!', '#E8C070', 4);
+            if (!this.crabDefeated) {
+                this.crabDefeated = true;
                 this.player.sticks += 50;
                 this.player.addXP(XP_PER_BOSS);
-                this.player.addWeapon('SAND_SWORD');
+                this.hud.notify('Charlie defeated! Pick up the Sand Sword!', '#E8C070', 3);
+                this.crabPickup = new WeaponPickup(SAND_CASTLE_WIDTH / 2, SAND_CASTLE_HEIGHT / 2, 'SAND_SWORD');
             }
+            this._handleBossPickup('crabPickup', () => this.exitSandCastle());
         }
 
         if (!this.player.alive) {
@@ -2126,6 +2131,9 @@ class Game {
         // Projectiles & particles
         for (const proj of this.crabProjectiles) { proj.draw(ctx, cam); }
         for (const p of this.crabParticles) { p.draw(ctx, cam); }
+
+        // Weapon pickup
+        if (this.crabPickup && !this.crabPickup.collected) this.crabPickup.draw(ctx, cam);
 
         // Vignette
         const vigGrad = ctx.createRadialGradient(
@@ -2300,14 +2308,14 @@ class Game {
 
         // Polar bear defeated
         if (!this.polarBoss.alive) {
-            this.polarDefeated = true;
-            if (this.polarBoss.deathTimer <= 0) {
-                this.exitIceCastle();
-                this.hud.notify('Tommy defeated! +50 sticks, +100 XP, Ice Sword!', '#66DDFF', 4);
+            if (!this.polarDefeated) {
+                this.polarDefeated = true;
                 this.player.sticks += 50;
                 this.player.addXP(XP_PER_BOSS);
-                this.player.addWeapon('ICE_SWORD');
+                this.hud.notify('Tommy defeated! Pick up the Ice Sword!', '#66DDFF', 3);
+                this.polarPickup = new WeaponPickup(ICE_CASTLE_WIDTH / 2, ICE_CASTLE_HEIGHT / 2, 'ICE_SWORD');
             }
+            this._handleBossPickup('polarPickup', () => this.exitIceCastle());
         }
 
         if (!this.player.alive) {
@@ -2412,6 +2420,9 @@ class Game {
         // Projectiles & particles
         for (const proj of this.polarProjectiles) { proj.draw(ctx, cam); }
         for (const p of this.polarParticles) { p.draw(ctx, cam); }
+
+        // Weapon pickup
+        if (this.polarPickup && !this.polarPickup.collected) this.polarPickup.draw(ctx, cam);
 
         // Vignette
         const vigGrad = ctx.createRadialGradient(
@@ -2586,14 +2597,14 @@ class Game {
 
         // Lava boss defeated
         if (!this.lavaBoss.alive) {
-            this.lavaDefeated = true;
-            if (this.lavaBoss.deathTimer <= 0) {
-                this.exitVolcanoLair();
-                this.hud.notify('Paddy defeated! +50 sticks, +100 XP, Lava Sword!', '#FF4400', 4);
+            if (!this.lavaDefeated) {
+                this.lavaDefeated = true;
                 this.player.sticks += 50;
                 this.player.addXP(XP_PER_BOSS);
-                this.player.addWeapon('LAVA_SWORD');
+                this.hud.notify('Paddy defeated! Pick up the Lava Sword!', '#FF4400', 3);
+                this.lavaPickup = new WeaponPickup(VOLCANO_LAIR_WIDTH / 2, VOLCANO_LAIR_HEIGHT / 2, 'LAVA_SWORD');
             }
+            this._handleBossPickup('lavaPickup', () => this.exitVolcanoLair());
         }
 
         if (!this.player.alive) {
@@ -2679,6 +2690,9 @@ class Game {
         for (const proj of this.lavaProjectiles) { proj.draw(ctx, cam); }
         for (const p of this.lavaParticles) { p.draw(ctx, cam); }
 
+        // Weapon pickup
+        if (this.lavaPickup && !this.lavaPickup.collected) this.lavaPickup.draw(ctx, cam);
+
         // Vignette
         const vigGrad = ctx.createRadialGradient(
             CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.3,
@@ -2739,6 +2753,29 @@ class Game {
             ctx.font = 'bold 18px Arial';
             ctx.fillText(this.hud.notification, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 100);
             ctx.globalAlpha = 1;
+        }
+    }
+
+    // Per-frame boss pickup handling: update bob, check pickup collision, auto-exit on collect.
+    _handleBossPickup(field, exitFn) {
+        const pickup = this[field];
+        if (!pickup || pickup.collected) return;
+        const dt = this._lastDt || 0.016;
+        pickup.update(dt);
+        // Collision with player (slight grace so walk-over feels reliable)
+        const dx = this.player.x - pickup.x;
+        const dy = this.player.y - pickup.y;
+        if (dx * dx + dy * dy < pickup.radius * pickup.radius + 400) {
+            // Don't collect until spawn animation has played briefly
+            if (pickup.spawnTimer >= 0.3) {
+                pickup.collected = true;
+                this.player.addWeapon(pickup.weaponKey);
+                // Auto-select the new weapon
+                this.player.switchToSlot(this.player.inventory.length - 1);
+                this.hud.notify(`Got ${pickup.def.name}!`, pickup.def.color, 3);
+                // Exit after a short delay so the pickup notification is visible
+                setTimeout(() => exitFn(), 400);
+            }
         }
     }
 
@@ -2894,6 +2931,9 @@ class Game {
 
         // Particles
         for (const p of this.bossParticles) p.draw(ctx, cam);
+
+        // Weapon pickup
+        if (this.bossPickup && !this.bossPickup.collected) this.bossPickup.draw(ctx, cam);
 
         // Boss name bar at top
         ctx.fillStyle = '#FFF';

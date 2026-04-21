@@ -64,6 +64,120 @@ class StickPickup {
     }
 }
 
+// ============================================
+// Weapon Pickup - Boss Drops
+// ============================================
+
+class WeaponPickup {
+    constructor(x, y, weaponKey) {
+        this.x = x;
+        this.y = y;
+        this.weaponKey = weaponKey;
+        this.def = WEAPON_DEFS[weaponKey];
+        this.collected = false;
+        this.bobTimer = Math.random() * Math.PI * 2;
+        this.spinTimer = 0;
+        this.radius = 22;
+        this.spawnTimer = 0; // grace animation
+    }
+
+    update(dt) {
+        this.bobTimer += dt * 2.5;
+        this.spinTimer += dt * 2;
+        this.spawnTimer += dt;
+    }
+
+    draw(ctx, camera) {
+        if (this.collected) return;
+        if (!camera.isVisible(this.x, this.y)) return;
+
+        const pos = camera.worldToScreen(this.x, this.y);
+        const bob = Math.sin(this.bobTimer) * 5;
+        const color = this.def.color;
+
+        // Spawn scale-in
+        const spawnScale = Math.min(1, this.spawnTimer * 2.5);
+
+        ctx.save();
+        ctx.translate(pos.x, pos.y + bob);
+        ctx.scale(spawnScale, spawnScale);
+
+        // Big pulsing glow
+        const glowPulse = 0.35 + Math.sin(this.bobTimer * 2) * 0.15;
+        const glow = ctx.createRadialGradient(0, 0, 5, 0, 0, 40);
+        glow.addColorStop(0, this._hexWithAlpha(color, glowPulse * 0.7));
+        glow.addColorStop(0.6, this._hexWithAlpha(color, glowPulse * 0.3));
+        glow.addColorStop(1, this._hexWithAlpha(color, 0));
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(0, 0, 40, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Ground ring (light beam on floor)
+        ctx.strokeStyle = this._hexWithAlpha(color, 0.7);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(0, 12, 18, 6, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Rotating weapon icon
+        ctx.rotate(this.spinTimer * 0.4);
+
+        // Sword shape
+        ctx.fillStyle = color;
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 1.5;
+        // Blade
+        ctx.beginPath();
+        ctx.moveTo(0, -22);
+        ctx.lineTo(4, -6);
+        ctx.lineTo(3, 6);
+        ctx.lineTo(-3, 6);
+        ctx.lineTo(-4, -6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        // Cross-guard
+        ctx.fillStyle = '#333';
+        ctx.fillRect(-9, 6, 18, 3);
+        // Grip
+        ctx.fillStyle = '#5A3010';
+        ctx.fillRect(-2, 9, 4, 8);
+        // Pommel
+        ctx.fillStyle = '#B8860B';
+        ctx.beginPath();
+        ctx.arc(0, 18, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Sparkle star
+        if (Math.sin(this.spinTimer * 3) > 0.5) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.beginPath();
+            ctx.arc(6, -10, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+
+        // Name label above
+        ctx.fillStyle = color;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.lineWidth = 3;
+        ctx.font = 'bold 13px Arial';
+        ctx.textAlign = 'center';
+        ctx.strokeText(this.def.name, pos.x, pos.y + bob - 34);
+        ctx.fillText(this.def.name, pos.x, pos.y + bob - 34);
+    }
+
+    _hexWithAlpha(hex, a) {
+        // #RRGGBB to rgba()
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${a})`;
+    }
+}
+
 function spawnSticks(count, worldW, worldH) {
     const sticks = [];
     for (let i = 0; i < count; i++) {
