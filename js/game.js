@@ -3093,19 +3093,20 @@ class Game {
     renderReplayButton(ctx) {
         const bx = CANVAS_WIDTH / 2 - 80;
         const by = CANVAS_HEIGHT / 2 + 155;
-        ctx.fillStyle = '#4488FF';
+        const mx = this.input.mouseX, my = this.input.mouseY;
+        const hover = mx > bx && mx < bx + 160 && my > by && my < by + 40;
+
+        ctx.fillStyle = hover ? '#5599FF' : '#4488FF';
         ctx.fillRect(bx, by, 160, 40);
         ctx.fillStyle = '#FFF';
         ctx.font = 'bold 18px Arial';
         ctx.textAlign = 'center';
         ctx.fillText('Play Again', CANVAS_WIDTH / 2, by + 27);
 
-        if (this.input.consumeClick()) {
-            const mx = this.input.mouseX;
-            const my = this.input.mouseY;
-            if (mx > bx && mx < bx + 160 && my > by && my < by + 40) {
-                this.initBattle('WOODEN_SWORD');
-            }
+        // Only consume click if it landed on this button, so other buttons still see theirs
+        if (hover && this.input.mouseClicked) {
+            this.input.mouseClicked = false;
+            this.initBattle('WOODEN_SWORD');
         }
     }
 
