@@ -69,10 +69,25 @@ class TouchControls {
         return dx * dx + dy * dy <= r * r;
     }
 
+    // States where taps should act as clicks (not game controls)
+    _isUIState() {
+        const state = window.game && window.game.state;
+        return state === 'MENU' || state === 'COSMETICS' || state === 'WEAPON_SELECT' ||
+               state === 'WIN' || state === 'LOSE';
+    }
+
     onTouchStart(e) {
         e.preventDefault();
         for (const touch of e.changedTouches) {
             const pos = this.toCanvas(touch.clientX, touch.clientY);
+
+            // On UI screens (menu, cosmetics, weapon select, win/lose), every tap is a click
+            if (this._isUIState()) {
+                this.input.mouseX = pos.x;
+                this.input.mouseY = pos.y;
+                this.input.mouseClicked = true;
+                continue;
+            }
 
             // Check interact button
             if (this.isInCircle(this.interactBtn.x, this.interactBtn.y, this.interactBtn.r + 10, pos.x, pos.y)) {
@@ -85,6 +100,14 @@ class TouchControls {
             if (this.isInCircle(this.sprintBtn.x, this.sprintBtn.y, this.sprintBtn.r + 10, pos.x, pos.y)) {
                 this.sprintPressed = true;
                 this.input.keys['r'] = true;
+                continue;
+            }
+
+            // Check Flee button (boss fights only)
+            const fleeBtn = this.getFleeBtn();
+            if (fleeBtn && pos.x > fleeBtn.x && pos.x < fleeBtn.x + fleeBtn.w &&
+                pos.y > fleeBtn.y && pos.y < fleeBtn.y + fleeBtn.h) {
+                this.input.keys['escape'] = true;
                 continue;
             }
 
@@ -113,6 +136,14 @@ class TouchControls {
                 this.input.mouseClicked = true;
             }
         }
+    }
+
+    getFleeBtn() {
+        const state = window.game && window.game.state;
+        const inBossFight = state === 'BOSS_FIGHT' || state === 'GHOST_FIGHT' ||
+                            state === 'CRAB_FIGHT' || state === 'POLAR_FIGHT' || state === 'LAVA_FIGHT';
+        if (!inBossFight) return null;
+        return { x: CANVAS_WIDTH - 110, y: 12, w: 94, h: 32 };
     }
 
     onTouchMove(e) {

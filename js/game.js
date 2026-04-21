@@ -1553,9 +1553,10 @@ class Game {
             this.bossDefeated = true;
             if (this.boss.deathTimer <= 0) {
                 this.exitCave();
-                this.hud.notify('Luca the Spider defeated! +50 sticks! +100 XP!', '#FFD700', 3);
+                this.hud.notify('Luca defeated! +50 sticks, +100 XP, Web Sword!', '#CC44CC', 4);
                 this.player.sticks += 50;
                 this.player.addXP(XP_PER_BOSS);
+                this.player.addWeapon('WEB_SWORD');
             }
         }
 
@@ -1703,9 +1704,10 @@ class Game {
             this.ghostDefeated = true;
             if (this.ghostBoss.deathTimer <= 0) {
                 this.exitHauntedHouse();
-                this.hud.notify('James the Ghost defeated! +50 sticks! +100 XP!', '#88CCFF', 3);
+                this.hud.notify('James defeated! +50 sticks, +100 XP, Ghost Sword!', '#88CCFF', 4);
                 this.player.sticks += 50;
                 this.player.addXP(XP_PER_BOSS);
+                this.player.addWeapon('GHOST_SWORD');
             }
         }
 
@@ -1893,7 +1895,7 @@ class Game {
         ctx.fillStyle = 'rgba(255,255,255,0.4)';
         ctx.font = '11px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Press ESC to flee', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 55);
+        this._drawFleeButton(ctx);
 
         // Notification
         if (this.hud.notificationTimer > 0) {
@@ -2018,9 +2020,10 @@ class Game {
             this.crabDefeated = true;
             if (this.crabBoss.deathTimer <= 0) {
                 this.exitSandCastle();
-                this.hud.notify('Charlie the Crab defeated! +50 sticks! +100 XP!', '#FF8844', 3);
+                this.hud.notify('Charlie defeated! +50 sticks, +100 XP, Sand Sword!', '#E8C070', 4);
                 this.player.sticks += 50;
                 this.player.addXP(XP_PER_BOSS);
+                this.player.addWeapon('SAND_SWORD');
             }
         }
 
@@ -2176,7 +2179,7 @@ class Game {
         ctx.fillStyle = 'rgba(255,255,255,0.4)';
         ctx.font = '11px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Press ESC to flee', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 55);
+        this._drawFleeButton(ctx);
 
         if (this.hud.notificationTimer > 0) {
             ctx.globalAlpha = Math.min(1, this.hud.notificationTimer);
@@ -2300,9 +2303,10 @@ class Game {
             this.polarDefeated = true;
             if (this.polarBoss.deathTimer <= 0) {
                 this.exitIceCastle();
-                this.hud.notify('Tommy the Polar Bear defeated! +50 sticks! +100 XP!', '#88DDFF', 3);
+                this.hud.notify('Tommy defeated! +50 sticks, +100 XP, Ice Sword!', '#66DDFF', 4);
                 this.player.sticks += 50;
                 this.player.addXP(XP_PER_BOSS);
+                this.player.addWeapon('ICE_SWORD');
             }
         }
 
@@ -2461,7 +2465,7 @@ class Game {
         ctx.fillStyle = 'rgba(255,255,255,0.4)';
         ctx.font = '11px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Press ESC to flee', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 55);
+        this._drawFleeButton(ctx);
 
         if (this.hud.notificationTimer > 0) {
             ctx.globalAlpha = Math.min(1, this.hud.notificationTimer);
@@ -2585,9 +2589,10 @@ class Game {
             this.lavaDefeated = true;
             if (this.lavaBoss.deathTimer <= 0) {
                 this.exitVolcanoLair();
-                this.hud.notify('Paddy the Lava Monster defeated! +50 sticks! +100 XP!', '#FF6600', 3);
+                this.hud.notify('Paddy defeated! +50 sticks, +100 XP, Lava Sword!', '#FF4400', 4);
                 this.player.sticks += 50;
                 this.player.addXP(XP_PER_BOSS);
+                this.player.addWeapon('LAVA_SWORD');
             }
         }
 
@@ -2726,7 +2731,7 @@ class Game {
         ctx.fillStyle = 'rgba(255,255,255,0.4)';
         ctx.font = '11px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Press ESC to flee', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 55);
+        this._drawFleeButton(ctx);
 
         if (this.hud.notificationTimer > 0) {
             ctx.globalAlpha = Math.min(1, this.hud.notificationTimer);
@@ -2735,6 +2740,35 @@ class Game {
             ctx.fillText(this.hud.notification, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 100);
             ctx.globalAlpha = 1;
         }
+    }
+
+    // Flee/exit button visible during boss fights. Tapping/clicking triggers ESC key.
+    _drawFleeButton(ctx) {
+        const bx = CANVAS_WIDTH - 110;
+        const by = 12;
+        const bw = 94;
+        const bh = 32;
+
+        const mx = this.input.mouseX, my = this.input.mouseY;
+        const hover = mx > bx && mx < bx + bw && my > by && my < by + bh;
+
+        // Mouse click on button acts as ESC
+        if (hover && this.input.mouseClicked) {
+            this.input.mouseClicked = false;
+            this.input.keys['escape'] = true;
+        }
+
+        ctx.fillStyle = hover ? 'rgba(180, 50, 50, 0.9)' : 'rgba(120, 30, 30, 0.8)';
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeStyle = '#FF6666';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx, by, bw, bh);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('✖ FLEE', bx + bw / 2, by + bh / 2);
+        ctx.textBaseline = 'alphabetic';
     }
 
     _makeRoomCamera(roomW, roomH) {
@@ -2886,7 +2920,7 @@ class Game {
         ctx.fillStyle = '#888';
         ctx.font = '12px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Press ESC to flee', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 15);
+        this._drawFleeButton(ctx);
 
         this.hud.update(0);
         if (this.hud.notificationTimer > 0) {

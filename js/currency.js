@@ -80,6 +80,24 @@ function spawnSticks(count, worldW, worldH) {
 // Food Pickups - Health Regeneration
 // ============================================
 
+// Cache of pre-rendered emoji icons (one offscreen canvas per unique emoji).
+// Drawing emoji text every frame is slow; drawImage from a cached canvas is fast.
+const FOOD_ICON_CACHE = {};
+function getFoodIcon(emoji) {
+    if (FOOD_ICON_CACHE[emoji]) return FOOD_ICON_CACHE[emoji];
+    const size = 32;
+    const c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    const g = c.getContext('2d');
+    g.font = '22px Arial';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(emoji, size / 2, size / 2 + 1);
+    FOOD_ICON_CACHE[emoji] = c;
+    return c;
+}
+
 class FoodPickup {
     constructor(x, y) {
         this.x = x;
@@ -93,6 +111,7 @@ class FoodPickup {
         this.bobTimer = Math.random() * Math.PI * 2;
         this.radius = 10;
         this.sparkleTimer = 0;
+        this.icon = getFoodIcon(this.emoji);
     }
 
     update(dt) {
@@ -107,8 +126,6 @@ class FoodPickup {
         const pos = camera.worldToScreen(this.x, this.y);
         const bob = Math.sin(this.bobTimer) * 4;
 
-        ctx.save();
-
         // Glow circle
         const glowAlpha = 0.2 + Math.sin(this.bobTimer * 1.5) * 0.1;
         ctx.fillStyle = `rgba(0, 255, 100, ${glowAlpha})`;
@@ -116,13 +133,10 @@ class FoodPickup {
         ctx.arc(pos.x, pos.y + bob, 12, 0, Math.PI * 2);
         ctx.fill();
 
-        // Food icon
-        ctx.font = '20px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(this.emoji, pos.x, pos.y + bob);
+        // Cached emoji icon (way faster than fillText every frame)
+        ctx.drawImage(this.icon, pos.x - 16, pos.y + bob - 16);
 
-        // Sparkle effect
+        // Sparkle effect (throttled)
         if (this.sparkleTimer % 0.8 < 0.4) {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             const sparkleAngle = this.sparkleTimer * 3;
@@ -136,8 +150,6 @@ class FoodPickup {
         ctx.font = 'bold 9px Arial';
         ctx.textAlign = 'center';
         ctx.fillText('+' + this.heal, pos.x, pos.y + bob - 14);
-
-        ctx.restore();
     }
 }
 
