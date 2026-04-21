@@ -2992,6 +2992,7 @@ class Game {
 
         this.renderStats(ctx);
         this.renderReplayButton(ctx);
+        this.renderMenuButton(ctx);
     }
 
     renderLose() {
@@ -3009,8 +3010,9 @@ class Game {
         ctx.fillText('You have fallen in battle.', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 30);
 
         this.renderStats(ctx);
-        this.renderBackToEvanbbButton(ctx);
         this.renderReplayButton(ctx);
+        this.renderMenuButton(ctx);
+        this.renderBackToEvanbbButton(ctx);
     }
 
     renderStats(ctx) {
@@ -3107,10 +3109,34 @@ class Game {
         }
     }
 
+    renderMenuButton(ctx) {
+        const bw = 160, bh = 36;
+        const bx = CANVAS_WIDTH / 2 - bw / 2;
+        const by = CANVAS_HEIGHT / 2 + 205;
+        const mx = this.input.mouseX, my = this.input.mouseY;
+        const hover = mx > bx && mx < bx + bw && my > by && my < by + bh;
+
+        ctx.fillStyle = hover ? '#5a4aaa' : '#3a2a88';
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeStyle = '#8866CC';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx, by, bw, bh);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('🏠 Main Menu', CANVAS_WIDTH / 2, by + 23);
+
+        if (this.input.mouseClicked && hover) {
+            this.input.mouseClicked = false;
+            this.state = 'MENU';
+            this._matchXPAwarded = false;
+        }
+    }
+
     renderBackToEvanbbButton(ctx) {
         const bw = 200, bh = 36;
         const bx = CANVAS_WIDTH / 2 - bw / 2;
-        const by = CANVAS_HEIGHT / 2 + 205;
+        const by = CANVAS_HEIGHT / 2 + 255;
         ctx.fillStyle = '#2a2a4a';
         ctx.fillRect(bx, by, bw, bh);
         ctx.strokeStyle = '#4488FF';
