@@ -117,7 +117,7 @@ class HUD {
 
         const slotSize = 48;
         const slotGap = 4;
-        const maxSlots = Math.max(inv.length, 5); // Show at least 5 slots
+        const maxSlots = Math.max(inv.length, 8); // Show at least 8 slots
         const totalW = maxSlots * slotSize + (maxSlots - 1) * slotGap;
         const barX = (CANVAS_WIDTH - totalW) / 2;
         const barY = CANVAS_HEIGHT - 56;
