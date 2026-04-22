@@ -6,7 +6,8 @@ class Game {
     constructor(canvas) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
-        this.state = 'MENU';
+        this.state = 'LOADING';
+        this.loadingTimer = 0;
         this.lastTime = 0;
         this.gameTime = 0;
 
@@ -108,6 +109,7 @@ class Game {
         this.music.update(dt);
 
         switch (this.state) {
+            case 'LOADING': this.updateLoading(dt); break;
             case 'MENU': this.updateMenu(dt); break;
             case 'COSMETICS': this.updateCosmetics(dt); break;
             case 'WEAPON_SELECT': break;
@@ -127,6 +129,7 @@ class Game {
         this.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
         switch (this.state) {
+            case 'LOADING': this.renderLoading(); break;
             case 'MENU': this.renderMenu(); break;
             case 'COSMETICS': this.renderCosmetics(); break;
             case 'WEAPON_SELECT': this.renderWeaponSelect(); break;
@@ -145,6 +148,231 @@ class Game {
         if (this.touch.active && (this.state === 'PLAYING' || this.state === 'BOSS_FIGHT' || this.state === 'GHOST_FIGHT' || this.state === 'CRAB_FIGHT')) {
             this.touch.draw(this.ctx);
         }
+    }
+
+    // ==================== LOADING ====================
+
+    updateLoading(dt) {
+        this.loadingTimer += dt;
+        // Transition to menu right before the sword would connect (~4.9s of 5s)
+        if (this.loadingTimer >= 4.9) {
+            this.state = 'MENU';
+        }
+    }
+
+    renderLoading() {
+        const ctx = this.ctx;
+        const t = this.loadingTimer;
+        const totalDuration = 5;
+        const progress = Math.min(1, t / totalDuration);
+
+        // Dark gradient background
+        const bg = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+        bg.addColorStop(0, '#0a0a1e');
+        bg.addColorStop(1, '#1a1a3e');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Studio logo — "ECJ games" at top
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'alphabetic';
+        ctx.shadowColor = 'rgba(68, 136, 255, 0.7)';
+        ctx.shadowBlur = 20;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 64px Arial';
+        ctx.fillText('ECJ games', CANVAS_WIDTH / 2, 110);
+        ctx.shadowBlur = 0;
+
+        // Tagline under logo
+        ctx.fillStyle = '#88AAFF';
+        ctx.font = '16px Arial';
+        ctx.fillText('presents', CANVAS_WIDTH / 2, 140);
+
+        // --- Fighting stickmen in middle of screen ---
+        const centerY = CANVAS_HEIGHT / 2 + 20;
+        const redX = CANVAS_WIDTH / 2 + 110;
+
+        // Blue stickman slowly advances and raises sword, then thrusts at the end
+        // 0s to 3s: Walk from far left toward red (sword held low, jaunty)
+        // 3s to 4.5s: Raise sword high (wind-up)
+        // 4.5s to 5s: Thrust forward rapidly
+        let blueX, swordAngle, thrustExtend;
+        if (t < 3) {
+            const p = t / 3;
+            blueX = CANVAS_WIDTH / 2 - 280 + p * 180; // arrives at x = center - 100
+            swordAngle = Math.PI * 0.25; // sword held low/forward
+            thrustExtend = 0;
+        } else if (t < 4.5) {
+            const p = (t - 3) / 1.5;
+            blueX = CANVAS_WIDTH / 2 - 100 + p * 20;
+            // Raise sword (windup: angle goes up over the head)
+            swordAngle = lerp(Math.PI * 0.25, -Math.PI * 0.55, p);
+            thrustExtend = 0;
+        } else {
+            const p = (t - 4.5) / 0.5; // 0..1
+            blueX = CANVAS_WIDTH / 2 - 80 + p * 80;
+            // Swing down/forward
+            swordAngle = lerp(-Math.PI * 0.55, Math.PI * 0.15, p);
+            thrustExtend = p * 14;
+        }
+
+        // Draw red stickman (idle, slight bob of fear)
+        const redBob = Math.sin(t * 6) * (t > 3 ? 2 : 0.5);
+        this._drawLoadingStickman(ctx, redX, centerY + redBob, '#FF4444', 0, 0, true);
+
+        // Draw blue stickman attacking
+        this._drawLoadingStickman(ctx, blueX, centerY, '#4488FF', swordAngle, thrustExtend, false);
+
+        // Impact sparks right before transition
+        if (t > 4.85) {
+            const sparkA = (5 - t) / 0.15;
+            for (let i = 0; i < 8; i++) {
+                const a = (i / 8) * Math.PI * 2;
+                ctx.fillStyle = `rgba(255, 230, 100, ${sparkA})`;
+                const sx = redX - 10 + Math.cos(a) * 18;
+                const sy = centerY - 10 + Math.sin(a) * 18;
+                ctx.beginPath();
+                ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // --- Progress bar at bottom ---
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 20px Arial';
+        const dots = '.'.repeat(Math.floor(t * 3) % 4);
+        ctx.fillText('Loading' + dots, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 80);
+
+        // Progress bar
+        const pbW = 500, pbH = 18;
+        const pbX = (CANVAS_WIDTH - pbW) / 2;
+        const pbY = CANVAS_HEIGHT - 60;
+        // Track
+        ctx.fillStyle = '#222';
+        ctx.fillRect(pbX, pbY, pbW, pbH);
+        // Fill
+        const fillGrad = ctx.createLinearGradient(pbX, pbY, pbX + pbW, pbY);
+        fillGrad.addColorStop(0, '#4488FF');
+        fillGrad.addColorStop(1, '#88CCFF');
+        ctx.fillStyle = fillGrad;
+        ctx.fillRect(pbX, pbY, pbW * progress, pbH);
+        // Border
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(pbX, pbY, pbW, pbH);
+
+        // Percentage text
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 12px Arial';
+        ctx.fillText(Math.floor(progress * 100) + '%', CANVAS_WIDTH / 2, pbY + pbH - 4);
+    }
+
+    _drawLoadingStickman(ctx, x, y, color, swordAngle, thrustExtend, facingLeft) {
+        ctx.save();
+
+        // Shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.beginPath();
+        ctx.ellipse(x, y + 50, 16, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Body
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+
+        // Head
+        ctx.beginPath();
+        ctx.arc(x, y - 24, 11, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Spine
+        ctx.beginPath();
+        ctx.moveTo(x, y - 13);
+        ctx.lineTo(x, y + 20);
+        ctx.stroke();
+
+        // Legs
+        ctx.beginPath();
+        ctx.moveTo(x, y + 20);
+        ctx.lineTo(x - 8, y + 44);
+        ctx.moveTo(x, y + 20);
+        ctx.lineTo(x + 8, y + 44);
+        ctx.stroke();
+
+        if (facingLeft) {
+            // Red stickman arms in defensive position
+            ctx.beginPath();
+            ctx.moveTo(x, y - 5);
+            ctx.lineTo(x - 14, y - 12); // left arm up
+            ctx.moveTo(x, y - 5);
+            ctx.lineTo(x + 12, y + 4);  // right arm down
+            ctx.stroke();
+            // A little sweat drop
+            ctx.fillStyle = '#88CCFF';
+            ctx.beginPath();
+            ctx.arc(x + 14, y - 24, 2, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            // Blue stickman swinging sword
+            // Arms — one hand on sword grip
+            const gripDx = Math.cos(swordAngle) * (18 + thrustExtend);
+            const gripDy = Math.sin(swordAngle) * (18 + thrustExtend);
+            // Back arm (support)
+            ctx.beginPath();
+            ctx.moveTo(x, y - 5);
+            ctx.lineTo(x - 10, y + 2);
+            ctx.stroke();
+            // Forward arm (sword arm)
+            ctx.beginPath();
+            ctx.moveTo(x, y - 5);
+            ctx.lineTo(x + gripDx, y + gripDy);
+            ctx.stroke();
+
+            // Draw sword in the sword hand
+            const gripX = x + gripDx;
+            const gripY = y + gripDy;
+            const bladeLen = 34;
+            const tipX = gripX + Math.cos(swordAngle) * bladeLen;
+            const tipY = gripY + Math.sin(swordAngle) * bladeLen;
+
+            // Blade
+            ctx.strokeStyle = '#E0E0E0';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(gripX, gripY);
+            ctx.lineTo(tipX, tipY);
+            ctx.stroke();
+            // Blade highlight
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(gripX, gripY);
+            ctx.lineTo(tipX, tipY);
+            ctx.stroke();
+
+            // Cross-guard perpendicular to blade
+            const perp = swordAngle + Math.PI / 2;
+            ctx.strokeStyle = '#FFD700';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(gripX + Math.cos(perp) * 6, gripY + Math.sin(perp) * 6);
+            ctx.lineTo(gripX - Math.cos(perp) * 6, gripY - Math.sin(perp) * 6);
+            ctx.stroke();
+
+            // Motion streak while swinging
+            if (thrustExtend > 4) {
+                ctx.strokeStyle = `rgba(255, 255, 255, ${Math.min(0.5, thrustExtend / 14 * 0.5)})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(gripX - Math.cos(swordAngle) * 6, gripY - Math.sin(swordAngle) * 6);
+                ctx.lineTo(tipX + Math.cos(swordAngle) * 6, tipY + Math.sin(swordAngle) * 6);
+                ctx.stroke();
+            }
+        }
+
+        ctx.restore();
     }
 
     // ==================== MENU ====================
