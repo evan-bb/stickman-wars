@@ -76,6 +76,31 @@ class TouchControls {
                state === 'WIN' || state === 'LOSE';
     }
 
+    // Bounding box of the inventory bar (bottom-center of screen).
+    // Must match hud.js drawInventoryBar dimensions.
+    _getInventoryBox() {
+        const slotSize = 48;
+        const slotGap = 4;
+        const pad = 6;
+        const inv = window.game && window.game.player && window.game.player.inventory;
+        const invLen = inv ? inv.length : 0;
+        const maxSlots = Math.max(invLen, 8);
+        const totalW = maxSlots * slotSize + (maxSlots - 1) * slotGap;
+        const barX = (CANVAS_WIDTH - totalW) / 2;
+        const barY = CANVAS_HEIGHT - 56;
+        return {
+            x: barX - pad - 4,              // a little extra touch slop
+            y: barY - pad - 4,
+            w: totalW + pad * 2 + 8,
+            h: slotSize + pad * 2 + 8
+        };
+    }
+
+    _inInventoryBox(px, py) {
+        const b = this._getInventoryBox();
+        return px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h;
+    }
+
     onTouchStart(e) {
         e.preventDefault();
         for (const touch of e.changedTouches) {
@@ -108,6 +133,15 @@ class TouchControls {
             if (fleeBtn && pos.x > fleeBtn.x && pos.x < fleeBtn.x + fleeBtn.w &&
                 pos.y > fleeBtn.y && pos.y < fleeBtn.y + fleeBtn.h) {
                 this.input.keys['escape'] = true;
+                continue;
+            }
+
+            // Inventory bar: taps here act as clicks (not joystick / not attack).
+            // Lets the player select any slot, including ones in the left-half joystick zone.
+            if (this._inInventoryBox(pos.x, pos.y)) {
+                this.input.mouseX = pos.x;
+                this.input.mouseY = pos.y;
+                this.input.mouseClicked = true;
                 continue;
             }
 
