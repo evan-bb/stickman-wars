@@ -1103,8 +1103,8 @@ class PolarBoss extends Entity {
     icicleThrow(player, projectiles) {
         const angle = angleBetween(this.x, this.y, player.x, player.y);
         const icicleWeapon = {
-            damage: 18,
-            projectileSpeed: POLAR_BOSS_CONFIG.icicleSpeed,
+            damage: 10,
+            projectileSpeed: POLAR_BOSS_CONFIG.icicleSpeed * 0.85,
             color: '#88DDFF',
             burn: false,
             pierce: false
