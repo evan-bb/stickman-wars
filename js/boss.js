@@ -1064,21 +1064,24 @@ class PolarBoss extends Entity {
             return;
         }
 
-        // Ground slam AoE
+        // Ground slam AoE — ring expands outward; player takes damage ONCE per slam
         if (this.slamActive) {
             this.slamRadius += dt * 250;
             this.slamTimer -= dt;
-            if (player && player.alive) {
+            if (player && player.alive && !this.slamHit) {
                 const dist = distance(this.x, this.y, player.x, player.y);
                 if (dist < this.slamRadius && dist > this.slamRadius - 40) {
-                    player.takeDamage(20, this);
+                    const dmg = 15;
+                    player.takeDamage(dmg, this);
                     spawnHitParticles(particles, player.x, player.y, '#AADDFF', 5);
-                    particles.push(new DamageNumber(player.x, player.y - 10, 20, '#88DDFF'));
+                    particles.push(new DamageNumber(player.x, player.y - 10, dmg, '#88DDFF'));
+                    this.slamHit = true; // lock out additional hits this slam
                 }
             }
             if (this.slamTimer <= 0) {
                 this.slamActive = false;
                 this.slamRadius = 0;
+                this.slamHit = false;
             }
             return;
         }
