@@ -1064,27 +1064,7 @@ class PolarBoss extends Entity {
             return;
         }
 
-        // Ground slam AoE — ring expands outward; player takes damage ONCE per slam
-        if (this.slamActive) {
-            this.slamRadius += dt * 250;
-            this.slamTimer -= dt;
-            if (player && player.alive && !this.slamHit) {
-                const dist = distance(this.x, this.y, player.x, player.y);
-                if (dist < this.slamRadius && dist > this.slamRadius - 40) {
-                    const dmg = 15;
-                    player.takeDamage(dmg, this);
-                    spawnHitParticles(particles, player.x, player.y, '#AADDFF', 5);
-                    particles.push(new DamageNumber(player.x, player.y - 10, dmg, '#88DDFF'));
-                    this.slamHit = true; // lock out additional hits this slam
-                }
-            }
-            if (this.slamTimer <= 0) {
-                this.slamActive = false;
-                this.slamRadius = 0;
-                this.slamHit = false;
-            }
-            return;
-        }
+        // (Ground slam removed — was too punishing at close range)
 
         // Normal movement
         if (player && player.alive) {
@@ -1106,17 +1086,9 @@ class PolarBoss extends Entity {
     }
 
     chooseAttack(player, projectiles, particles) {
-        const dist = distance(this.x, this.y, player.x, player.y);
         const roll = Math.random();
 
-        if (dist < 80 && roll < 0.35) {
-            // Ground slam
-            this.slamActive = true;
-            this.slamTimer = 0.6;
-            this.slamRadius = 0;
-            this.attackTimer = this.phase === 2 ? 1.5 : 2.5;
-            spawnHitParticles(particles, this.x, this.y, '#CCEFFF', 10);
-        } else if (roll < 0.6) {
+        if (roll < 0.45) {
             // Charge
             this.chargeWindup = 0.5;
             this.currentAttack = 'windup';
@@ -1254,21 +1226,6 @@ class PolarBoss extends Entity {
             ctx.arc(x, y, 35, 0, Math.PI * 2);
             ctx.stroke();
             ctx.setLineDash([]);
-        }
-
-        // Ground slam ring
-        if (this.slamActive) {
-            const slamAlpha = clamp(1 - this.slamRadius / 150, 0, 0.6);
-            ctx.strokeStyle = `rgba(136, 221, 255, ${slamAlpha})`;
-            ctx.lineWidth = 5;
-            ctx.beginPath();
-            ctx.arc(x, y, this.slamRadius * 0.8, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.strokeStyle = `rgba(200, 240, 255, ${slamAlpha * 0.5})`;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(x, y, this.slamRadius * 0.5, 0, Math.PI * 2);
-            ctx.stroke();
         }
 
         ctx.restore();
