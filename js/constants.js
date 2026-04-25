@@ -252,3 +252,9 @@ const EMOTES = [
 ];
 const EMOTE_DURATION = 2.4;       // seconds the emote stays up
 const EMOTE_COOLDOWN = 0.8;       // anti-spam cooldown after one ends
+
+// 1v1 multiplayer arena
+const MP_ARENA_WIDTH = 1100;
+const MP_ARENA_HEIGHT = 700;
+const MP_STATE_HZ = 20;           // how often we send our state to opponent
+const MP_WIN_XP = 100;            // XP awarded for winning a 1v1

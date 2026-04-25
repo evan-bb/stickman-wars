@@ -15,6 +15,20 @@ class Game {
         this.emoteWheelOpen = false;
         this.emoteWheelHover = -1;
 
+        // Multiplayer state
+        this.mp = null;                   // MultiplayerClient instance during a 1v1
+        this.mpCodeBuf = '';              // typed code on the lobby screen
+        this.mpStatus = '';               // status text for lobby/waiting
+        this.mpStatusColor = '#FFFFFF';
+        this.mpLobbyMode = 'menu';        // 'menu' | 'host' | 'join' | 'connecting'
+        this.mpOpponent = null;           // remote player snapshot
+        this.mpOpponentTarget = null;     // interpolation target
+        this.mpSendTimer = 0;
+        this.mpResult = null;             // 'win' | 'lose' once match ends
+        this.mpProjectiles = [];          // local projectiles in 1v1
+        this.mpParticles = [];
+        this.mpEntities = [];             // [player, opponent stub] for weapon hit detection
+
         this.input = new InputHandler(canvas);
         this.touch = new TouchControls(canvas, this.input);
         this.camera = new Camera();
@@ -116,6 +130,9 @@ class Game {
             case 'LOADING': this.updateLoading(dt); break;
             case 'MENU': this.updateMenu(dt); break;
             case 'COSMETICS': this.updateCosmetics(dt); break;
+            case 'MP_LOBBY': this.updateMPLobby(dt); break;
+            case 'MP_FIGHT': this.updateMPFight(dt); break;
+            case 'MP_RESULT': this.updateMPResult(dt); break;
             case 'WEAPON_SELECT': break;
             case 'COUNTDOWN': this.updateCountdown(dt); break;
             case 'PLAYING': this.updatePlaying(dt); break;
@@ -136,6 +153,9 @@ class Game {
             case 'LOADING': this.renderLoading(); break;
             case 'MENU': this.renderMenu(); break;
             case 'COSMETICS': this.renderCosmetics(); break;
+            case 'MP_LOBBY': this.renderMPLobby(); break;
+            case 'MP_FIGHT': this.renderMPFight(); break;
+            case 'MP_RESULT': this.renderMPFight(); this.renderMPResult(); break;
             case 'WEAPON_SELECT': this.renderWeaponSelect(); break;
             case 'COUNTDOWN': this.renderPlaying(); this.renderCountdown(); break;
             case 'PLAYING': this.renderPlaying(); break;
@@ -406,6 +426,12 @@ class Game {
                 this.music.init();
                 this.state = 'COSMETICS';
             }
+            // 1v1 ONLINE button
+            else if (mx > CANVAS_WIDTH / 2 - 80 && mx < CANVAS_WIDTH / 2 + 80 &&
+                my > CANVAS_HEIGHT / 2 + 195 && my < CANVAS_HEIGHT / 2 + 231) {
+                this.music.init();
+                this.openMPLobby();
+            }
             // Check "Back to evanbb.com" button (top-left)
             else if (mx > 20 && mx < 220 && my > 20 && my < 56) {
                 window.location.href = 'https://evanbb.com';
@@ -513,6 +539,20 @@ class Game {
         ctx.font = 'bold 16px Arial';
         ctx.textAlign = 'center';
         ctx.fillText('🎩 COSMETICS', CANVAS_WIDTH / 2, cosBtnY + 23);
+
+        // 1v1 Online button (below cosmetics)
+        const mpBtnX = CANVAS_WIDTH / 2 - 80;
+        const mpBtnY = CANVAS_HEIGHT / 2 + 195;
+        const mpHover = cosMx > mpBtnX && cosMx < mpBtnX + 160 && cosMy > mpBtnY && cosMy < mpBtnY + 36;
+        ctx.fillStyle = mpHover ? '#cc6644' : '#aa3322';
+        ctx.fillRect(mpBtnX, mpBtnY, 160, 36);
+        ctx.strokeStyle = '#FF8866';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(mpBtnX, mpBtnY, 160, 36);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('⚔️ 1V1 ONLINE', CANVAS_WIDTH / 2, mpBtnY + 23);
 
         // Controls info
         ctx.fillStyle = '#666';
@@ -3693,5 +3733,756 @@ class Game {
                 window.location.href = 'https://evanbb.com';
             }
         }
+    }
+
+    // ==================== 1V1 ONLINE LOBBY ====================
+
+    openMPLobby() {
+        this.state = 'MP_LOBBY';
+        this.mpCodeBuf = '';
+        this.mpStatus = '';
+        this.mpStatusColor = '#FFFFFF';
+        this.mpLobbyMode = 'menu';
+        if (this.mp) this.mp.leave();
+        this.mp = null;
+    }
+
+    _randomCode() {
+        const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // skip ambiguous chars
+        let s = '';
+        for (let i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
+        return s;
+    }
+
+    _bindMPHandlers() {
+        const mp = this.mp;
+        mp.on('connected', () => {
+            // Both ends ready — start the fight
+            mp.send('hello', { name: 'Player', weapon: 'WOODEN_SWORD' });
+        });
+        mp.on('msg:hello', () => {
+            // We've heard from opponent — begin the match
+            this._startMPFight();
+        });
+        mp.on('msg:state', (m) => {
+            this.mpOpponentTarget = m;
+            if (!this.mpOpponent) this.mpOpponent = { ...m };
+        });
+        mp.on('msg:damage', (m) => {
+            // Opponent's attack hit us — apply damage locally
+            if (this.player && this.player.alive) {
+                this.player.health = Math.max(0, this.player.health - m.amount);
+                spawnHitParticles(this.mpParticles, this.player.x, this.player.y, '#FF4444', 6);
+                this.mpParticles.push(new DamageNumber(this.player.x, this.player.y - 10, m.amount, '#FF4444'));
+                if (this.player.health <= 0) {
+                    this.player.alive = false;
+                    this._endMPFight('lose');
+                }
+            }
+        });
+        mp.on('msg:emote', (m) => {
+            const e = EMOTES.find(e => e.key === m.key);
+            if (e && this.mpOpponent) {
+                this.mpOpponent.emote = e;
+                this.mpOpponent.emoteTimer = EMOTE_DURATION;
+            }
+        });
+        mp.on('msg:win', (m) => {
+            // Opponent reports they died — we win
+            if (this.state === 'MP_FIGHT') this._endMPFight('win');
+        });
+        mp.on('disconnected', () => {
+            if (this.state === 'MP_FIGHT' && !this.mpResult) {
+                this._endMPFight('win', 'Opponent disconnected');
+            } else if (this.state === 'MP_LOBBY') {
+                this.mpStatus = 'Connection lost';
+                this.mpStatusColor = '#FF6666';
+                this.mpLobbyMode = 'menu';
+            }
+        });
+        mp.on('error', (err) => {
+            console.warn('mp error', err);
+        });
+    }
+
+    async _hostRoomFlow() {
+        this.mpStatus = 'Generating code...';
+        this.mpStatusColor = '#FFD700';
+        this.mpLobbyMode = 'connecting';
+        // Try a few random codes until one isn't taken
+        for (let attempt = 0; attempt < 5; attempt++) {
+            const code = this._randomCode();
+            this.mp = new MultiplayerClient();
+            this._bindMPHandlers();
+            try {
+                await this.mp.hostRoom(code);
+                this.mpCodeBuf = code;
+                this.mpStatus = 'Share code: ' + code;
+                this.mpStatusColor = '#44FF66';
+                this.mpLobbyMode = 'host';
+                return;
+            } catch (e) {
+                this.mp.leave();
+                this.mp = null;
+                // try a different code
+            }
+        }
+        this.mpStatus = 'Could not host. Try again.';
+        this.mpStatusColor = '#FF6666';
+        this.mpLobbyMode = 'menu';
+    }
+
+    async _joinRoomFlow() {
+        if (this.mpCodeBuf.length !== 4) {
+            this.mpStatus = 'Code must be 4 letters';
+            this.mpStatusColor = '#FF6666';
+            return;
+        }
+        this.mpStatus = 'Connecting to ' + this.mpCodeBuf + '...';
+        this.mpStatusColor = '#FFD700';
+        this.mpLobbyMode = 'connecting';
+        this.mp = new MultiplayerClient();
+        this._bindMPHandlers();
+        try {
+            await this.mp.joinRoom(this.mpCodeBuf);
+            this.mpStatus = 'Connected! Starting match...';
+            this.mpStatusColor = '#44FF66';
+        } catch (e) {
+            this.mpStatus = (e && e.message) || 'Connection failed';
+            this.mpStatusColor = '#FF6666';
+            if (this.mp) this.mp.leave();
+            this.mp = null;
+            this.mpLobbyMode = 'menu';
+        }
+    }
+
+    updateMPLobby(dt) {
+        // Type code via keyboard (when in 'join' input mode)
+        if (this.mpLobbyMode === 'join') {
+            for (const k of Object.keys(this.input.keys)) {
+                if (this.input.keys[k] && k.length === 1 && /^[a-z0-9]$/.test(k)) {
+                    if (this.mpCodeBuf.length < 4) {
+                        this.mpCodeBuf += k.toUpperCase();
+                    }
+                    this.input.keys[k] = false;
+                }
+            }
+            if (this.input.isKeyDown('backspace')) {
+                this.mpCodeBuf = this.mpCodeBuf.slice(0, -1);
+                this.input.keys['backspace'] = false;
+            }
+            if (this.input.isKeyDown('enter')) {
+                this.input.keys['enter'] = false;
+                this._joinRoomFlow();
+            }
+        }
+
+        if (this.input.isKeyDown('escape')) {
+            this.input.keys['escape'] = false;
+            if (this.mp) this.mp.leave();
+            this.mp = null;
+            this.state = 'MENU';
+            return;
+        }
+
+        // Click handling
+        if (!this.input.consumeClick()) return;
+        const mx = this.input.mouseX, my = this.input.mouseY;
+
+        // Back button (top-left)
+        if (mx > 20 && mx < 120 && my > 20 && my < 56) {
+            if (this.mp) this.mp.leave();
+            this.mp = null;
+            this.state = 'MENU';
+            return;
+        }
+
+        if (this.mpLobbyMode === 'menu') {
+            // Host button — generates a code
+            if (mx > CANVAS_WIDTH / 2 - 200 && mx < CANVAS_WIDTH / 2 - 20 &&
+                my > 280 && my < 360) {
+                this._hostRoomFlow();
+                return;
+            }
+            // Join button — opens code input
+            if (mx > CANVAS_WIDTH / 2 + 20 && mx < CANVAS_WIDTH / 2 + 200 &&
+                my > 280 && my < 360) {
+                this.mpLobbyMode = 'join';
+                this.mpCodeBuf = '';
+                this.mpStatus = 'Enter the host\'s code';
+                this.mpStatusColor = '#FFFFFF';
+                return;
+            }
+        } else if (this.mpLobbyMode === 'join') {
+            // Connect button
+            if (mx > CANVAS_WIDTH / 2 - 80 && mx < CANVAS_WIDTH / 2 + 80 &&
+                my > 480 && my < 524) {
+                this._joinRoomFlow();
+                return;
+            }
+            // Cancel back to menu
+            if (mx > CANVAS_WIDTH / 2 - 80 && mx < CANVAS_WIDTH / 2 + 80 &&
+                my > 540 && my < 580) {
+                this.mpLobbyMode = 'menu';
+                this.mpStatus = '';
+                return;
+            }
+            // Code letter tiles (4 boxes) — clicking any focuses input (no-op needed; keyboard handles)
+        } else if (this.mpLobbyMode === 'host') {
+            // Cancel host
+            if (mx > CANVAS_WIDTH / 2 - 80 && mx < CANVAS_WIDTH / 2 + 80 &&
+                my > 540 && my < 580) {
+                if (this.mp) this.mp.leave();
+                this.mp = null;
+                this.mpLobbyMode = 'menu';
+                this.mpStatus = '';
+                return;
+            }
+        }
+    }
+
+    renderMPLobby() {
+        const ctx = this.ctx;
+        ctx.fillStyle = '#1a0a0a';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Back button
+        const mx = this.input.mouseX, my = this.input.mouseY;
+        const backHover = mx > 20 && mx < 120 && my > 20 && my < 56;
+        ctx.fillStyle = backHover ? '#3a3a5a' : '#2a2a4a';
+        ctx.fillRect(20, 20, 100, 36);
+        ctx.strokeStyle = '#4488FF';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(20, 20, 100, 36);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('← Back', 70, 42);
+
+        // Title
+        ctx.fillStyle = '#FF8866';
+        ctx.font = 'bold 44px Arial';
+        ctx.fillText('⚔️  1V1 ONLINE  ⚔️', CANVAS_WIDTH / 2, 100);
+        ctx.fillStyle = '#AAA';
+        ctx.font = '14px Arial';
+        ctx.fillText('Win a 1v1 match for +' + MP_WIN_XP + ' XP', CANVAS_WIDTH / 2, 130);
+
+        if (this.mpLobbyMode === 'menu') {
+            // Host card
+            const hx = CANVAS_WIDTH / 2 - 200, hy = 280, hw = 180, hh = 80;
+            const hHover = mx > hx && mx < hx + hw && my > hy && my < hy + hh;
+            ctx.fillStyle = hHover ? '#3a4488' : '#222244';
+            ctx.fillRect(hx, hy, hw, hh);
+            ctx.strokeStyle = '#4488FF';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(hx, hy, hw, hh);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 22px Arial';
+            ctx.fillText('🏠 HOST', hx + hw / 2, hy + 36);
+            ctx.fillStyle = '#AAA';
+            ctx.font = '11px Arial';
+            ctx.fillText('Get a code, share it', hx + hw / 2, hy + 60);
+
+            // Join card
+            const jx = CANVAS_WIDTH / 2 + 20, jy = 280, jw = 180, jh = 80;
+            const jHover = mx > jx && mx < jx + jw && my > jy && my < jy + jh;
+            ctx.fillStyle = jHover ? '#883a44' : '#442222';
+            ctx.fillRect(jx, jy, jw, jh);
+            ctx.strokeStyle = '#FF8844';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(jx, jy, jw, jh);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 22px Arial';
+            ctx.fillText('🚪 JOIN', jx + jw / 2, jy + 36);
+            ctx.fillStyle = '#AAA';
+            ctx.font = '11px Arial';
+            ctx.fillText('Type your friend\'s code', jx + jw / 2, jy + 60);
+        }
+
+        if (this.mpLobbyMode === 'host') {
+            // Show the code in big letters
+            ctx.fillStyle = '#FFD700';
+            ctx.font = 'bold 32px Arial';
+            ctx.fillText('Your code:', CANVAS_WIDTH / 2, 270);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 100px monospace';
+            ctx.fillText(this.mpCodeBuf, CANVAS_WIDTH / 2, 380);
+            ctx.fillStyle = '#AAA';
+            ctx.font = '14px Arial';
+            ctx.fillText('Tell your friend to type this code on their JOIN screen.', CANVAS_WIDTH / 2, 420);
+            ctx.fillText('Waiting for opponent...', CANVAS_WIDTH / 2, 442);
+
+            // Cancel button
+            const cx = CANVAS_WIDTH / 2 - 80, cy = 540;
+            const cHover = mx > cx && mx < cx + 160 && my > cy && my < cy + 40;
+            ctx.fillStyle = cHover ? '#5a3a3a' : '#3a2a2a';
+            ctx.fillRect(cx, cy, 160, 40);
+            ctx.strokeStyle = '#FF6666';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(cx, cy, 160, 40);
+            ctx.fillStyle = '#FFF';
+            ctx.font = 'bold 16px Arial';
+            ctx.fillText('Cancel', CANVAS_WIDTH / 2, cy + 26);
+        }
+
+        if (this.mpLobbyMode === 'join') {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 22px Arial';
+            ctx.fillText('Enter the host\'s 4-letter code', CANVAS_WIDTH / 2, 280);
+
+            // 4 input boxes
+            const boxSize = 60, boxGap = 12;
+            const totalW = boxSize * 4 + boxGap * 3;
+            const startX = (CANVAS_WIDTH - totalW) / 2;
+            const boxY = 320;
+            for (let i = 0; i < 4; i++) {
+                const bx = startX + i * (boxSize + boxGap);
+                const filled = i < this.mpCodeBuf.length;
+                ctx.fillStyle = filled ? '#222244' : '#111122';
+                ctx.fillRect(bx, boxY, boxSize, boxSize);
+                ctx.strokeStyle = filled ? '#FF8844' : '#444488';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(bx, boxY, boxSize, boxSize);
+                if (filled) {
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = 'bold 42px monospace';
+                    ctx.fillText(this.mpCodeBuf[i], bx + boxSize / 2, boxY + 46);
+                }
+            }
+
+            // Hint
+            ctx.fillStyle = '#888';
+            ctx.font = '12px Arial';
+            ctx.fillText('Type letters on your keyboard. Backspace to delete. Enter to connect.', CANVAS_WIDTH / 2, 410);
+
+            // Connect button
+            const ccx = CANVAS_WIDTH / 2 - 80, ccy = 480;
+            const ccHover = mx > ccx && mx < ccx + 160 && my > ccy && my < ccy + 44;
+            const ready = this.mpCodeBuf.length === 4;
+            ctx.fillStyle = ready ? (ccHover ? '#5599FF' : '#4488FF') : '#445566';
+            ctx.fillRect(ccx, ccy, 160, 44);
+            ctx.strokeStyle = '#FFF';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(ccx, ccy, 160, 44);
+            ctx.fillStyle = '#FFF';
+            ctx.font = 'bold 18px Arial';
+            ctx.fillText('CONNECT', CANVAS_WIDTH / 2, ccy + 28);
+
+            // Cancel button
+            const cancelY = 540;
+            const cancelHover = mx > CANVAS_WIDTH / 2 - 80 && mx < CANVAS_WIDTH / 2 + 80 &&
+                my > cancelY && my < cancelY + 36;
+            ctx.fillStyle = cancelHover ? '#3a3a5a' : '#2a2a4a';
+            ctx.fillRect(CANVAS_WIDTH / 2 - 80, cancelY, 160, 36);
+            ctx.fillStyle = '#FFF';
+            ctx.font = 'bold 14px Arial';
+            ctx.fillText('Cancel', CANVAS_WIDTH / 2, cancelY + 23);
+        }
+
+        if (this.mpLobbyMode === 'connecting') {
+            ctx.fillStyle = '#FFD700';
+            ctx.font = 'bold 22px Arial';
+            ctx.fillText('Connecting...', CANVAS_WIDTH / 2, 380);
+        }
+
+        // Status line
+        if (this.mpStatus) {
+            ctx.fillStyle = this.mpStatusColor;
+            ctx.font = 'bold 16px Arial';
+            ctx.fillText(this.mpStatus, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 80);
+        }
+    }
+
+    // ==================== 1V1 FIGHT ====================
+
+    _startMPFight() {
+        this.state = 'MP_FIGHT';
+        this.music.play('boss');
+        this.mpResult = null;
+        this.mpProjectiles = [];
+        this.mpParticles = [];
+        this.mpOpponent = null;
+        this.mpOpponentTarget = null;
+        this.mpSendTimer = 0;
+
+        // Set up player at one end of arena
+        const isHost = this.mp.role === 'host';
+        const startX = isHost ? 100 : MP_ARENA_WIDTH - 100;
+        const startY = MP_ARENA_HEIGHT / 2;
+
+        // Reset/create the player entity
+        if (!this.player) {
+            this.player = new Player(startX, startY);
+        }
+        this.player.x = startX;
+        this.player.y = startY;
+        this.player.health = 100;
+        this.player.maxHealth = 100;
+        this.player.alive = true;
+        this.player.kills = 0;
+        this.player.sticks = 0;
+        this.player.inventory = [];
+        this.player.activeSlot = 0;
+        this.player.weapon = null;
+        this.player.addWeapon('WOODEN_SWORD');
+
+        // Build a fake "entities" array used by the player's weapon for hit detection.
+        // Slot 0 is the player; slot 1 is a stub representing the opponent.
+        this._mpOppStub = {
+            x: 0, y: 0, radius: 12, alive: true, health: 100, maxHealth: 100,
+            isPlayer: false, team: TEAMS.RED, isMPOpponent: true,
+            takeDamage: (amount, attacker) => {
+                // We hit the opponent locally — tell them about it
+                this.mp.send('damage', { amount });
+                spawnHitParticles(this.mpParticles, this._mpOppStub.x, this._mpOppStub.y, '#FFAA44', 5);
+                this.mpParticles.push(new DamageNumber(this._mpOppStub.x, this._mpOppStub.y - 10, amount, '#FFAA44'));
+                this._mpOppStub.health = Math.max(0, this._mpOppStub.health - amount);
+            },
+            update: () => {}
+        };
+        this.mpEntities = [this.player, this._mpOppStub];
+
+        this._mpCamera = this._makeRoomCamera(MP_ARENA_WIDTH, MP_ARENA_HEIGHT);
+    }
+
+    _endMPFight(result, customMsg) {
+        if (this.mpResult) return;
+        this.mpResult = result;
+        this.mpResultMsg = customMsg;
+        if (result === 'win') {
+            this.progression.addXP(MP_WIN_XP);
+            this.progression.save();
+            this.mp.send('win', { winner: this.mp.role });
+        }
+        this.state = 'MP_RESULT';
+    }
+
+    updateMPFight(dt) {
+        if (!this.mp || !this.mp.connected) {
+            this._endMPFight('win', 'Opponent left');
+            return;
+        }
+        const cam = this._mpCamera;
+        const input = this.input;
+
+        // Player movement (iso-style like other interior fights)
+        let mx = 0, my = 0;
+        if (input.isKeyDown('w') || input.isKeyDown('arrowup'))    { mx -= 1; my -= 1; }
+        if (input.isKeyDown('s') || input.isKeyDown('arrowdown'))  { mx += 1; my += 1; }
+        if (input.isKeyDown('a') || input.isKeyDown('arrowleft'))  { mx -= 1; my += 1; }
+        if (input.isKeyDown('d') || input.isKeyDown('arrowright')) { mx += 1; my -= 1; }
+        const mLen = Math.sqrt(mx * mx + my * my);
+        if (mLen > 0) { mx /= mLen; my /= mLen; }
+        this.player.vx = mx * this.player.speed;
+        this.player.vy = my * this.player.speed;
+        this.player.x += this.player.vx * dt;
+        this.player.y += this.player.vy * dt;
+        this.player.x = clamp(this.player.x, 30, MP_ARENA_WIDTH - 30);
+        this.player.y = clamp(this.player.y, 30, MP_ARENA_HEIGHT - 30);
+        if (Math.abs(this.player.vx) > 1 || Math.abs(this.player.vy) > 1) {
+            this.player.moveFacing = Math.atan2(this.player.vy, this.player.vx);
+            this.player.walkTimer += dt;
+        }
+
+        // Aim
+        const worldMouse = cam.screenToWorld(input.mouseX, input.mouseY);
+        this.player.facing = angleBetween(this.player.x, this.player.y, worldMouse.x, worldMouse.y);
+
+        // Interpolate opponent stub toward latest network state
+        if (this.mpOpponentTarget) {
+            const t = this.mpOpponent || (this.mpOpponent = { ...this.mpOpponentTarget });
+            const lerpAmt = Math.min(1, dt * 12);
+            t.x = lerp(t.x ?? this.mpOpponentTarget.x, this.mpOpponentTarget.x, lerpAmt);
+            t.y = lerp(t.y ?? this.mpOpponentTarget.y, this.mpOpponentTarget.y, lerpAmt);
+            t.facing = this.mpOpponentTarget.facing;
+            t.hp = this.mpOpponentTarget.hp;
+            // Update stub for hit detection
+            this._mpOppStub.x = t.x;
+            this._mpOppStub.y = t.y;
+            this._mpOppStub.alive = t.hp > 0;
+            this._mpOppStub.health = t.hp;
+        }
+
+        // Opponent emote timer countdown
+        if (this.mpOpponent && this.mpOpponent.emoteTimer > 0) {
+            this.mpOpponent.emoteTimer -= dt;
+            if (this.mpOpponent.emoteTimer <= 0) this.mpOpponent.emote = null;
+        }
+
+        // Attack
+        if (this.player.weapon && (input.mouseDown || input.isKeyDown(' '))) {
+            this.player.weapon.attack(this.player, this.mpEntities, this.mpProjectiles, this.mpParticles);
+        }
+        for (const wpn of this.player.inventory) wpn.update(dt);
+        if (this.player.attackAnim > 0) { this.player.attackAnim -= dt * 4; if (this.player.attackAnim < 0) this.player.attackAnim = 0; }
+        this.player.updateEmote(dt);
+        this._updateEmoteWheel();
+
+        // Send our state at MP_STATE_HZ
+        this.mpSendTimer += dt;
+        const sendInterval = 1 / MP_STATE_HZ;
+        if (this.mpSendTimer >= sendInterval) {
+            this.mpSendTimer = 0;
+            this.mp.send('state', {
+                x: this.player.x, y: this.player.y,
+                facing: this.player.facing,
+                hp: this.player.health,
+                attack: this.player.attackAnim > 0,
+                ts: Date.now()
+            });
+        }
+
+        // Send emote when player plays one (forward to opponent once)
+        if (this.player.emote && !this.player._lastSentEmote) {
+            this.mp.send('emote', { key: this.player.emote.key });
+            this.player._lastSentEmote = this.player.emote.key;
+        }
+        if (!this.player.emote) this.player._lastSentEmote = null;
+
+        // Update projectiles
+        for (const proj of this.mpProjectiles) {
+            proj.update(dt);
+            if (proj.team === TEAMS.BLUE && this._mpOppStub.alive) {
+                if (circleCollision(proj.x, proj.y, proj.radius, this._mpOppStub.x, this._mpOppStub.y, this._mpOppStub.radius + 10)) {
+                    this._mpOppStub.takeDamage(proj.damage, this.player);
+                    proj.alive = false;
+                }
+            }
+        }
+        this.mpProjectiles = this.mpProjectiles.filter(p => p.alive);
+
+        for (const p of this.mpParticles) p.update(dt);
+        this.mpParticles = this.mpParticles.filter(p => p.alive || (p.life !== undefined && p.life > 0));
+
+        // ESC to flee → counts as a loss (opponent wins by default)
+        if (input.isKeyDown('escape')) {
+            input.keys['escape'] = false;
+            this._endMPFight('lose', 'You fled');
+        }
+
+        if (!this.player.alive) {
+            this._endMPFight('lose');
+        }
+    }
+
+    renderMPFight() {
+        const ctx = this.ctx;
+        const cam = this._mpCamera;
+        if (!cam) return;
+
+        // Background
+        ctx.fillStyle = '#1a1020';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Arena floor (dark stone-like)
+        const corners = [
+            cam.worldToScreen(0, 0),
+            cam.worldToScreen(MP_ARENA_WIDTH, 0),
+            cam.worldToScreen(MP_ARENA_WIDTH, MP_ARENA_HEIGHT),
+            cam.worldToScreen(0, MP_ARENA_HEIGHT)
+        ];
+        ctx.fillStyle = '#2a2230';
+        ctx.beginPath();
+        ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
+        ctx.closePath();
+        ctx.fill();
+
+        // Center line
+        ctx.strokeStyle = 'rgba(255, 100, 100, 0.4)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        const top = cam.worldToScreen(MP_ARENA_WIDTH / 2, 0);
+        const bot = cam.worldToScreen(MP_ARENA_WIDTH / 2, MP_ARENA_HEIGHT);
+        ctx.moveTo(top.x, top.y);
+        ctx.lineTo(bot.x, bot.y);
+        ctx.stroke();
+
+        // Wall outline
+        ctx.strokeStyle = '#6a4070';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
+        ctx.closePath();
+        ctx.stroke();
+
+        // Opponent stickman (drawn through normal pipeline using a stub entity)
+        if (this.mpOpponent && this._mpOppStub.alive) {
+            const opp = {
+                x: this.mpOpponent.x, y: this.mpOpponent.y,
+                facing: this.mpOpponent.facing || 0,
+                vx: 0, vy: 0,
+                walkTimer: this.gameTime, moveFacing: this.mpOpponent.facing,
+                attackAnim: this.mpOpponent.attack ? 0.5 : 0,
+                health: this.mpOpponent.hp ?? 100, maxHealth: 100,
+                alive: true, isPlayer: false, team: TEAMS.RED,
+                emote: this.mpOpponent.emote, emoteTimer: this.mpOpponent.emoteTimer,
+                weapon: { key: 'WOODEN_SWORD', color: WEAPON_DEFS.WOODEN_SWORD.color, type: 'melee' }
+            };
+            drawStickman(ctx, opp, cam);
+        }
+
+        // Player
+        drawStickman(ctx, this.player, cam);
+
+        // Projectiles & particles
+        for (const proj of this.mpProjectiles) proj.draw(ctx, cam);
+        for (const p of this.mpParticles) p.draw(ctx, cam);
+
+        // Player's emote bubble (uses world camera, not regular camera)
+        if (this.player.emote) {
+            const bubblePos = cam.worldToScreen(this.player.x, this.player.y);
+            this._drawEmoteBubbleAt(ctx, this.player.emote, this.player.emoteTimer, bubblePos.x, bubblePos.y - 56);
+        }
+        // Opponent's emote bubble
+        if (this.mpOpponent && this.mpOpponent.emote && this.mpOpponent.emoteTimer > 0) {
+            const op = cam.worldToScreen(this.mpOpponent.x, this.mpOpponent.y);
+            this._drawEmoteBubbleAt(ctx, this.mpOpponent.emote, this.mpOpponent.emoteTimer, op.x, op.y - 56);
+        }
+
+        // Vignette
+        const vig = ctx.createRadialGradient(
+            CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.3,
+            CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.7
+        );
+        vig.addColorStop(0, 'rgba(0,0,0,0)');
+        vig.addColorStop(1, 'rgba(0,0,0,0.5)');
+        ctx.fillStyle = vig;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Top HUD bar
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, 50);
+        // My HP (left)
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('YOU', 20, 20);
+        ctx.fillStyle = '#222';
+        ctx.fillRect(20, 25, 200, 14);
+        ctx.fillStyle = '#44CC44';
+        ctx.fillRect(20, 25, 200 * (this.player.health / 100), 14);
+        ctx.strokeStyle = '#FFF';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(20, 25, 200, 14);
+        // Opponent HP (right)
+        ctx.fillStyle = '#FFF';
+        ctx.textAlign = 'right';
+        ctx.fillText('OPPONENT', CANVAS_WIDTH - 20, 20);
+        ctx.fillStyle = '#222';
+        ctx.fillRect(CANVAS_WIDTH - 220, 25, 200, 14);
+        ctx.fillStyle = '#FF4444';
+        const oppHp = this.mpOpponent ? Math.max(0, this.mpOpponent.hp || 0) : 100;
+        ctx.fillRect(CANVAS_WIDTH - 220, 25, 200 * (oppHp / 100), 14);
+        ctx.strokeStyle = '#FFF';
+        ctx.strokeRect(CANVAS_WIDTH - 220, 25, 200, 14);
+
+        // Center: code
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#FFD700';
+        ctx.font = 'bold 14px Arial';
+        ctx.fillText('1V1 — Room ' + (this.mp ? this.mp.code : '????'), CANVAS_WIDTH / 2, 32);
+
+        // Inventory + emote button still useful
+        this.hud.drawInventoryBar(ctx, this.player, this.input);
+        this._drawEmoteButton(ctx);
+        this._drawEmoteWheel(ctx);
+
+        // ESC hint
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.font = '11px Arial';
+        ctx.fillText('Press ESC to forfeit', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 10);
+    }
+
+    _drawEmoteBubbleAt(ctx, emote, timer, bx, by) {
+        // Smaller version of _drawPlayerEmote for arbitrary positions
+        const t = EMOTE_DURATION - timer;
+        const lifePct = timer / EMOTE_DURATION;
+        const alpha = Math.min(Math.min(1, t * 4), Math.min(1, lifePct * 2.5));
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(bx, by);
+        const bubW = 50, bubH = 38;
+        ctx.fillStyle = 'rgba(20, 20, 40, 0.92)';
+        ctx.beginPath();
+        ctx.moveTo(-6, bubH / 2 - 1);
+        ctx.lineTo(0, bubH / 2 + 8);
+        ctx.lineTo(6, bubH / 2 - 1);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        const r = 8;
+        ctx.moveTo(-bubW / 2 + r, -bubH / 2);
+        ctx.arcTo(bubW / 2, -bubH / 2, bubW / 2, bubH / 2, r);
+        ctx.arcTo(bubW / 2, bubH / 2, -bubW / 2, bubH / 2, r);
+        ctx.arcTo(-bubW / 2, bubH / 2, -bubW / 2, -bubH / 2, r);
+        ctx.arcTo(-bubW / 2, -bubH / 2, bubW / 2, -bubH / 2, r);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = emote.color;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = emote.color;
+        ctx.font = 'bold 22px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(emote.emoji, 0, 0);
+        ctx.restore();
+    }
+
+    updateMPResult(dt) {
+        if (this.input.consumeClick()) {
+            const mx = this.input.mouseX, my = this.input.mouseY;
+            // Back to menu button
+            if (mx > CANVAS_WIDTH / 2 - 90 && mx < CANVAS_WIDTH / 2 + 90 &&
+                my > CANVAS_HEIGHT / 2 + 60 && my < CANVAS_HEIGHT / 2 + 100) {
+                if (this.mp) this.mp.leave();
+                this.mp = null;
+                this.state = 'MENU';
+            }
+        }
+        if (this.input.isKeyDown('escape')) {
+            this.input.keys['escape'] = false;
+            if (this.mp) this.mp.leave();
+            this.mp = null;
+            this.state = 'MENU';
+        }
+    }
+
+    renderMPResult() {
+        const ctx = this.ctx;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        const won = this.mpResult === 'win';
+        ctx.fillStyle = won ? '#44FF44' : '#FF4444';
+        ctx.font = 'bold 64px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(won ? 'VICTORY!' : 'DEFEATED', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 60);
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '20px Arial';
+        if (this.mpResultMsg) {
+            ctx.fillText(this.mpResultMsg, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 10);
+        }
+        if (won) {
+            ctx.fillStyle = '#FFD700';
+            ctx.font = 'bold 22px Arial';
+            ctx.fillText('+' + MP_WIN_XP + ' XP', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 30);
+        }
+
+        // Back to menu button
+        const bx = CANVAS_WIDTH / 2 - 90, by = CANVAS_HEIGHT / 2 + 60;
+        const mx = this.input.mouseX, my = this.input.mouseY;
+        const hover = mx > bx && mx < bx + 180 && my > by && my < by + 40;
+        ctx.fillStyle = hover ? '#5599FF' : '#4488FF';
+        ctx.fillRect(bx, by, 180, 40);
+        ctx.strokeStyle = '#FFF';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx, by, 180, 40);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText('🏠 Main Menu', CANVAS_WIDTH / 2, by + 26);
     }
 }

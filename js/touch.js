@@ -73,7 +73,8 @@ class TouchControls {
     _isUIState() {
         const state = window.game && window.game.state;
         return state === 'MENU' || state === 'COSMETICS' || state === 'WEAPON_SELECT' ||
-               state === 'WIN' || state === 'LOSE';
+               state === 'WIN' || state === 'LOSE' ||
+               state === 'MP_LOBBY' || state === 'MP_RESULT';
     }
 
     // Bounding box of the inventory bar (bottom-center of screen).
