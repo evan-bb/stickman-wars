@@ -3794,6 +3794,17 @@ class Game {
                 this.mpOpponent.emoteTimer = EMOTE_DURATION;
             }
         });
+        mp.on('msg:drop', (m) => {
+            // Host announces a new center weapon drop. Guest mirrors it.
+            if (this.mp && this.mp.role === 'host') return;
+            if (!m || !m.id || !m.weaponKey) return;
+            this.mpDrops.push({ id: m.id, weaponKey: m.weaponKey, x: m.x, y: m.y, spawnT: 0 });
+        });
+        mp.on('msg:pickup', (m) => {
+            // The other side claimed a drop — remove it from our list (no-op if already gone).
+            if (!m || !m.id) return;
+            this.mpDrops = this.mpDrops.filter(d => d.id !== m.id);
+        });
         mp.on('msg:win', (m) => {
             // Opponent reports they died (or that we lost). If we already saw it locally,
             // do nothing. Otherwise, treat it as authoritative.
@@ -4025,6 +4036,11 @@ class Game {
         this.mpOpponentTarget = null;
         this.mpSendTimer = 0;
 
+        // Center weapon drops. Host owns spawning; both sides handle pickups.
+        this.mpDrops = [];
+        this._mpDropIdCounter = 1;
+        this._mpDropTimer = MP_DROP_FIRST_DELAY;
+
         // Set up player at one end of arena
         const isHost = this.mp.role === 'host';
         const startX = isHost ? 100 : MP_ARENA_WIDTH - 100;
@@ -4095,6 +4111,152 @@ class Game {
         this.player.fallDir = this.mpOpponent ? ((this.player.x >= this.mpOpponent.x) ? 1 : -1) : 1;
         this._mpPendingResult = 'lose';
         this._mpPendingResultDelay = 1.5;
+    }
+
+    _drawMPPillar(ctx, cam, wx, wy) {
+        const base = cam.worldToScreen(wx, wy);
+        const top = { x: base.x, y: base.y - 56 };
+        // Shadow on the floor
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.beginPath();
+        ctx.ellipse(base.x + 6, base.y + 4, 16, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Column shaft
+        const grad = ctx.createLinearGradient(top.x - 12, 0, top.x + 12, 0);
+        grad.addColorStop(0, '#4a3a55');
+        grad.addColorStop(0.5, '#7a6a85');
+        grad.addColorStop(1, '#3a2a45');
+        ctx.fillStyle = grad;
+        ctx.fillRect(top.x - 11, top.y, 22, 56);
+        // Cap + base
+        ctx.fillStyle = '#5a4a65';
+        ctx.fillRect(top.x - 14, top.y - 6, 28, 8);
+        ctx.fillRect(top.x - 14, base.y - 4, 28, 6);
+        // Highlight
+        ctx.fillStyle = 'rgba(255,255,255,0.08)';
+        ctx.fillRect(top.x - 9, top.y + 2, 4, 50);
+
+        // Torch on top — tiny flickering flame
+        const flick = 0.7 + 0.3 * Math.sin(this.gameTime * 18 + wx);
+        ctx.fillStyle = `rgba(255, 180, 60, ${0.85 * flick})`;
+        ctx.beginPath();
+        ctx.arc(top.x, top.y - 14, 6 * flick, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgba(255, 230, 130, ${0.9 * flick})`;
+        ctx.beginPath();
+        ctx.arc(top.x, top.y - 14, 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Render a center weapon drop in iso. The marker pulses + bobs.
+    _drawMPDrop(ctx, cam, drop) {
+        const wpn = WEAPON_DEFS[drop.weaponKey];
+        if (!wpn) return;
+        const pos = cam.worldToScreen(drop.x, drop.y);
+        const t = drop.spawnT || 0;
+        const bob = Math.sin(t * 4) * 4;
+        const glowR = 22 + Math.sin(t * 3) * 4;
+
+        // Shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.beginPath();
+        ctx.ellipse(pos.x, pos.y + 4, 14, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Glow halo
+        const glow = ctx.createRadialGradient(pos.x, pos.y - 8 + bob, 2, pos.x, pos.y - 8 + bob, glowR);
+        glow.addColorStop(0, 'rgba(255, 230, 100, 0.55)');
+        glow.addColorStop(1, 'rgba(255, 230, 100, 0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y - 8 + bob, glowR, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Weapon icon (simple stylized: line for melee, line + tip for ranged)
+        ctx.save();
+        ctx.translate(pos.x, pos.y - 8 + bob);
+        ctx.rotate(Math.sin(t * 2) * 0.15 - Math.PI / 4);
+        if (wpn.type === 'ranged') {
+            // Bow-style arc
+            ctx.strokeStyle = wpn.color;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, 12, -Math.PI * 0.4, Math.PI * 0.4);
+            ctx.stroke();
+            // String
+            ctx.strokeStyle = '#EEE';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(11, -10);
+            ctx.lineTo(11, 10);
+            ctx.stroke();
+        } else {
+            // Sword: blade + crossguard + grip
+            ctx.strokeStyle = wpn.color;
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-10, 10);
+            ctx.lineTo(14, -14);
+            ctx.stroke();
+            ctx.strokeStyle = '#5a3a1a';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(-12, 12);
+            ctx.lineTo(-4, 4);
+            ctx.stroke();
+            // Crossguard
+            ctx.strokeStyle = '#caa040';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-8, 0);
+            ctx.lineTo(4, 8);
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        // Weapon name label above
+        if (t < 1.2) {
+            const a = Math.min(1, t * 2);
+            ctx.globalAlpha = a;
+            ctx.fillStyle = '#FFD700';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.font = 'bold 11px Arial';
+            ctx.textAlign = 'center';
+            ctx.strokeText(wpn.name, pos.x, pos.y - 28 + bob);
+            ctx.fillText(wpn.name, pos.x, pos.y - 28 + bob);
+            ctx.globalAlpha = 1;
+        }
+    }
+
+    // Host-only: pick a random weapon and a random spot in the central
+    // band of the arena, push to local list, return the drop.
+    _spawnMPDrop() {
+        const w = MP_WEAPON_DROP_POOL[Math.floor(Math.random() * MP_WEAPON_DROP_POOL.length)];
+        const bandW = MP_ARENA_WIDTH * MP_DROP_CENTER_FRAC;
+        const x = MP_ARENA_WIDTH / 2 + (Math.random() - 0.5) * bandW;
+        const y = 80 + Math.random() * (MP_ARENA_HEIGHT - 160);
+        const drop = { id: this._mpDropIdCounter++, weaponKey: w, x, y, spawnT: 0 };
+        this.mpDrops.push(drop);
+        return drop;
+    }
+
+    // Local player walked over a drop — claim it: equip the weapon, tell the
+    // other side, and remove from our list. Idempotent over the network: if
+    // both players claim simultaneously, both equip; the duplicate 'pickup'
+    // messages are no-ops.
+    _claimMPDrop(drop) {
+        // Replace current weapon (single-slot inventory in MP).
+        this.player.inventory = [];
+        this.player.activeSlot = 0;
+        this.player.weapon = null;
+        this.player.addWeapon(drop.weaponKey);
+        spawnHitParticles(this.mpParticles, drop.x, drop.y, '#FFD700', 12);
+        // Pickup label as a short-lived particle (reuses the floating-text update from particles.js).
+        this.mpParticles.push(new MPPickupLabel(drop.x, drop.y - 14, WEAPON_DEFS[drop.weaponKey].name));
+        this.mpDrops = this.mpDrops.filter(d => d.id !== drop.id);
+        if (this.mp) this.mp.send('pickup', { id: drop.id });
     }
 
     _endMPFight(result, customMsg) {
@@ -4193,6 +4355,7 @@ class Game {
             t.y = lerp(t.y ?? this.mpOpponentTarget.y, this.mpOpponentTarget.y, lerpAmt);
             t.facing = this.mpOpponentTarget.facing;
             t.hp = this.mpOpponentTarget.hp;
+            t.weapon = this.mpOpponentTarget.weapon || t.weapon;
             // Derive velocity from interpolated position so the walk cycle
             // animates without needing the sender to ship vx/vy.
             if (dt > 0 && prevX !== undefined && prevY !== undefined) {
@@ -4238,6 +4401,7 @@ class Game {
                 facing: this.player.facing,
                 hp: this.player.health,
                 attack: this.player.attackAnim > 0,
+                weapon: this.player.weapon ? this.player.weapon.key : 'WOODEN_SWORD',
                 ts: Date.now()
             });
         }
@@ -4248,6 +4412,28 @@ class Game {
             this.player._lastSentEmote = this.player.emote.key;
         }
         if (!this.player.emote) this.player._lastSentEmote = null;
+
+        // ---- Center weapon drops ----
+        // Host owns the spawn schedule; it broadcasts drops, guest just mirrors.
+        if (this.mp.role === 'host' && this.player.alive) {
+            this._mpDropTimer -= dt;
+            if (this._mpDropTimer <= 0 && this.mpDrops.length < MP_DROP_MAX_COUNT) {
+                const drop = this._spawnMPDrop();
+                this.mp.send('drop', { id: drop.id, weaponKey: drop.weaponKey, x: drop.x, y: drop.y });
+                this._mpDropTimer = MP_DROP_INTERVAL;
+            }
+        }
+        // Animate drops + check pickup distance for our local player.
+        for (const d of this.mpDrops) d.spawnT = (d.spawnT || 0) + dt;
+        if (this.player.alive && this.mpDrops.length > 0) {
+            for (const d of this.mpDrops.slice()) {
+                const dx = d.x - this.player.x;
+                const dy = d.y - this.player.y;
+                if (dx * dx + dy * dy <= MP_DROP_PICKUP_RADIUS * MP_DROP_PICKUP_RADIUS) {
+                    this._claimMPDrop(d);
+                }
+            }
+        }
 
         // Update projectiles
         for (const proj of this.mpProjectiles) {
@@ -4278,42 +4464,123 @@ class Game {
         const cam = this._mpCamera;
         if (!cam) return;
 
-        // Background
-        ctx.fillStyle = '#1a1020';
+        // Background gradient (dark sky behind the colosseum)
+        const bg = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+        bg.addColorStop(0, '#100818');
+        bg.addColorStop(1, '#1a0f24');
+        ctx.fillStyle = bg;
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-        // Arena floor (dark stone-like)
+        // Arena floor — a stone diamond drawn in iso. Rendered as a base
+        // fill plus a checker tile pattern + concentric rings around the
+        // center pad where weapon drops appear.
         const corners = [
             cam.worldToScreen(0, 0),
             cam.worldToScreen(MP_ARENA_WIDTH, 0),
             cam.worldToScreen(MP_ARENA_WIDTH, MP_ARENA_HEIGHT),
             cam.worldToScreen(0, MP_ARENA_HEIGHT)
         ];
-        ctx.fillStyle = '#2a2230';
+        ctx.fillStyle = '#2c2336';
         ctx.beginPath();
         ctx.moveTo(corners[0].x, corners[0].y);
         for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
         ctx.closePath();
         ctx.fill();
 
-        // Center line
-        ctx.strokeStyle = 'rgba(255, 100, 100, 0.4)';
-        ctx.lineWidth = 2;
+        // Tile grid: alternating shades for stone-floor texture.
+        const tile = 100;
+        const cols = Math.ceil(MP_ARENA_WIDTH / tile);
+        const rows = Math.ceil(MP_ARENA_HEIGHT / tile);
+        ctx.save();
         ctx.beginPath();
-        const top = cam.worldToScreen(MP_ARENA_WIDTH / 2, 0);
-        const bot = cam.worldToScreen(MP_ARENA_WIDTH / 2, MP_ARENA_HEIGHT);
-        ctx.moveTo(top.x, top.y);
-        ctx.lineTo(bot.x, bot.y);
-        ctx.stroke();
+        ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
+        ctx.closePath();
+        ctx.clip();
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                if ((r + c) % 2 !== 0) continue;
+                const tc = [
+                    cam.worldToScreen(c * tile, r * tile),
+                    cam.worldToScreen((c + 1) * tile, r * tile),
+                    cam.worldToScreen((c + 1) * tile, (r + 1) * tile),
+                    cam.worldToScreen(c * tile, (r + 1) * tile)
+                ];
+                ctx.fillStyle = '#332940';
+                ctx.beginPath();
+                ctx.moveTo(tc[0].x, tc[0].y);
+                ctx.lineTo(tc[1].x, tc[1].y);
+                ctx.lineTo(tc[2].x, tc[2].y);
+                ctx.lineTo(tc[3].x, tc[3].y);
+                ctx.closePath();
+                ctx.fill();
+            }
+        }
+        // Subtle grid lines
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+        ctx.lineWidth = 1;
+        for (let c = 0; c <= cols; c++) {
+            const a = cam.worldToScreen(c * tile, 0);
+            const b = cam.worldToScreen(c * tile, MP_ARENA_HEIGHT);
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+        }
+        for (let r = 0; r <= rows; r++) {
+            const a = cam.worldToScreen(0, r * tile);
+            const b = cam.worldToScreen(MP_ARENA_WIDTH, r * tile);
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+        }
 
-        // Wall outline
-        ctx.strokeStyle = '#6a4070';
-        ctx.lineWidth = 4;
+        // Centre pad — three concentric glowing rings telegraph the drop zone.
+        const cwx = MP_ARENA_WIDTH / 2;
+        const cwy = MP_ARENA_HEIGHT / 2;
+        const pulse = 0.5 + 0.5 * Math.sin(this.gameTime * 1.6);
+        for (let i = 3; i >= 1; i--) {
+            const r = i * 80;
+            const alpha = 0.10 + (i === 1 ? pulse * 0.18 : 0);
+            ctx.strokeStyle = `rgba(255, 215, 80, ${alpha})`;
+            ctx.lineWidth = i === 1 ? 3 : 2;
+            ctx.beginPath();
+            // Approximate iso circle as a diamond ellipse.
+            const center = cam.worldToScreen(cwx, cwy);
+            ctx.ellipse(center.x, center.y, r, r * 0.5, 0, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        // Center marker emblem
+        {
+            const center = cam.worldToScreen(cwx, cwy);
+            ctx.fillStyle = `rgba(255, 215, 80, ${0.10 + pulse * 0.10})`;
+            ctx.beginPath();
+            ctx.ellipse(center.x, center.y, 22, 11, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.restore();
+
+        // Decorative pillars at the four corners (offset slightly inside the wall).
+        this._drawMPPillar(ctx, cam, 60, 60);
+        this._drawMPPillar(ctx, cam, MP_ARENA_WIDTH - 60, 60);
+        this._drawMPPillar(ctx, cam, 60, MP_ARENA_HEIGHT - 60);
+        this._drawMPPillar(ctx, cam, MP_ARENA_WIDTH - 60, MP_ARENA_HEIGHT - 60);
+
+        // Wall outline (with thicker dark inner stroke for depth)
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 6;
         ctx.beginPath();
         ctx.moveTo(corners[0].x, corners[0].y);
         for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
         ctx.closePath();
         ctx.stroke();
+        ctx.strokeStyle = '#7a4d8a';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Center weapon drops (under the fighters so they walk in front).
+        for (const d of this.mpDrops) this._drawMPDrop(ctx, cam, d);
 
         // Opponent stickman (alive: regular draw; dying: death animation)
         if (this.mpOpponent) {
@@ -4332,7 +4599,11 @@ class Game {
                 deathTimer: this._mpOppStub.deathTimer,
                 deathMaxTimer: this._mpOppStub.deathMaxTimer,
                 fallDir: this._mpOppStub.fallDir,
-                weapon: { key: 'WOODEN_SWORD', color: WEAPON_DEFS.WOODEN_SWORD.color, type: 'melee' }
+                weapon: (() => {
+                    const k = this.mpOpponent.weapon || 'WOODEN_SWORD';
+                    const def = WEAPON_DEFS[k] || WEAPON_DEFS.WOODEN_SWORD;
+                    return { key: k, color: def.color, type: def.type };
+                })()
             };
             if (!opp.alive && opp.deathTimer > 0) {
                 drawStickmanDeath(ctx, opp, cam);

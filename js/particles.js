@@ -65,6 +65,38 @@ class DamageNumber {
     }
 }
 
+// Floating label particle for the MP center weapon pickup. Looks like a
+// damage number but renders an arbitrary string instead of "-N".
+class MPPickupLabel {
+    constructor(x, y, text) {
+        this.x = x;
+        this.y = y;
+        this.text = text;
+        this.life = 1.4;
+        this.maxLife = 1.4;
+        this.alive = true;
+    }
+    update(dt) {
+        this.y -= 30 * dt;
+        this.life -= dt;
+        if (this.life <= 0) this.alive = false;
+    }
+    draw(ctx, camera) {
+        if (!camera.isVisible(this.x, this.y)) return;
+        const pos = camera.worldToScreen(this.x, this.y);
+        const alpha = clamp(this.life / this.maxLife, 0, 1);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = '#FFD700';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.strokeText(this.text, pos.x, pos.y);
+        ctx.fillText(this.text, pos.x, pos.y);
+        ctx.globalAlpha = 1;
+    }
+}
+
 function spawnHitParticles(particles, x, y, color, count) {
     for (let i = 0; i < count; i++) {
         const angle = Math.random() * Math.PI * 2;
