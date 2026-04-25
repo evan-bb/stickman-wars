@@ -17,10 +17,11 @@ class Game {
 
         // Multiplayer state
         this.mp = null;                   // MultiplayerClient instance during a 1v1
-        this.mpCodeBuf = '';              // typed code on the lobby screen
+        this.lobby = null;                // LobbyClient (Firebase matchmaking)
         this.mpStatus = '';               // status text for lobby/waiting
         this.mpStatusColor = '#FFFFFF';
-        this.mpLobbyMode = 'menu';        // 'menu' | 'host' | 'join' | 'connecting'
+        this.mpLobbyMode = 'searching';   // 'searching' | 'failed'
+        this.mpSearchStart = 0;
         this.mpOpponent = null;           // remote player snapshot
         this.mpOpponentTarget = null;     // interpolation target
         this.mpSendTimer = 0;
@@ -3751,19 +3752,14 @@ class Game {
 
     openMPLobby() {
         this.state = 'MP_LOBBY';
-        this.mpCodeBuf = '';
-        this.mpStatus = '';
-        this.mpStatusColor = '#FFFFFF';
-        this.mpLobbyMode = 'menu';
+        this.mpStatus = 'Searching for an opponent...';
+        this.mpStatusColor = '#FFD700';
+        this.mpLobbyMode = 'searching';
+        this.mpSearchStart = performance.now();
         if (this.mp) this.mp.leave();
+        if (this.lobby) this.lobby.leaveLobby().catch(() => {});
         this.mp = null;
-    }
-
-    _randomCode() {
-        const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // skip ambiguous chars
-        let s = '';
-        for (let i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
-        return s;
+        this._findMatchFlow();
     }
 
     _bindMPHandlers() {
@@ -3815,7 +3811,7 @@ class Game {
             } else if (this.state === 'MP_LOBBY') {
                 this.mpStatus = 'Connection lost';
                 this.mpStatusColor = '#FF6666';
-                this.mpLobbyMode = 'menu';
+                this.mpLobbyMode = 'failed';
             }
         });
         mp.on('error', (err) => {
@@ -3823,91 +3819,74 @@ class Game {
         });
     }
 
-    async _hostRoomFlow() {
-        this.mpStatus = 'Connecting to broker...';
-        this.mpStatusColor = '#FFD700';
-        this.mpLobbyMode = 'connecting';
-        // Verify PeerJS loaded
+    async _findMatchFlow() {
         if (typeof Peer === 'undefined') {
             this.mpStatus = 'Multiplayer library failed to load. Check your connection.';
             this.mpStatusColor = '#FF6666';
-            this.mpLobbyMode = 'menu';
+            this.mpLobbyMode = 'failed';
             return;
         }
-        // Try a few random codes until one isn't taken
-        let lastErr = null;
-        for (let attempt = 0; attempt < 5; attempt++) {
-            const code = this._randomCode();
-            this.mp = new MultiplayerClient();
-            this._bindMPHandlers();
-            try {
-                await this.mp.hostRoom(code);
-                this.mpCodeBuf = code;
-                this.mpStatus = 'Share code: ' + code;
-                this.mpStatusColor = '#44FF66';
-                this.mpLobbyMode = 'host';
-                return;
-            } catch (e) {
-                lastErr = e;
-                this.mp.leave();
-                this.mp = null;
-            }
+        if (typeof firebase === 'undefined') {
+            this.mpStatus = 'Matchmaking service failed to load.';
+            this.mpStatusColor = '#FF6666';
+            this.mpLobbyMode = 'failed';
+            return;
         }
-        this.mpStatus = 'Could not host: ' + ((lastErr && lastErr.message) || 'unknown error');
-        this.mpStatusColor = '#FF6666';
-        this.mpLobbyMode = 'menu';
+
+        // Capture the lobby and mp instances we create on this run so we can
+        // detect the user pressing Cancel mid-flow.
+        const lobby = this.lobby = new LobbyClient();
+        const mp = this.mp = new MultiplayerClient();
+        this._bindMPHandlers();
+
+        const cancelled = () => this.lobby !== lobby || this.mp !== mp;
+
+        try {
+            const match = await lobby.findMatch('pending-' + Math.random().toString(36).slice(2, 10));
+            if (cancelled()) return;
+
+            if (match.role === 'guest') {
+                // Opponent is already hosting — connect to them.
+                this.mpStatus = 'Opponent found! Connecting...';
+                this.mpStatusColor = '#44FF66';
+                await mp.connectToPeer(match.opponentPeerId);
+                if (cancelled()) return;
+                // The lobby slot was already cleared by the transaction.
+            } else {
+                // We're the host. Register on the broker, publish our peerId
+                // to the lobby slot so a guest can find us, then wait.
+                const ourId = await mp.hostPeer();
+                if (cancelled()) return;
+                // Republish — the lobby placeholder we wrote during findMatch
+                // used a temp id, swap it for the real PeerJS id.
+                await firebase.database().ref('lobby/waiting').set({ peerId: ourId, ts: Date.now() });
+                this.mpStatus = 'Waiting for an opponent to join...';
+                this.mpStatusColor = '#FFD700';
+                // From here, the 'connected' event handler picks up the incoming guest.
+            }
+        } catch (e) {
+            if (cancelled()) return;
+            console.warn('matchmaking failed', e);
+            this.mpStatus = (e && e.message) || 'Matchmaking failed';
+            this.mpStatusColor = '#FF6666';
+            this.mpLobbyMode = 'failed';
+            try { await lobby.leaveLobby(); } catch (_) {}
+            if (mp) mp.leave();
+        }
     }
 
-    async _joinRoomFlow() {
-        if (this.mpCodeBuf.length !== 4) {
-            this.mpStatus = 'Code must be 4 letters';
-            this.mpStatusColor = '#FF6666';
-            return;
-        }
-        this.mpStatus = 'Connecting to ' + this.mpCodeBuf + '...';
-        this.mpStatusColor = '#FFD700';
-        this.mpLobbyMode = 'connecting';
-        this.mp = new MultiplayerClient();
-        this._bindMPHandlers();
-        try {
-            await this.mp.joinRoom(this.mpCodeBuf);
-            this.mpStatus = 'Connected! Starting match...';
-            this.mpStatusColor = '#44FF66';
-        } catch (e) {
-            this.mpStatus = (e && e.message) || 'Connection failed';
-            this.mpStatusColor = '#FF6666';
-            if (this.mp) this.mp.leave();
-            this.mp = null;
-            this.mpLobbyMode = 'menu';
-        }
+    _cancelMatchmaking() {
+        if (this.lobby) this.lobby.leaveLobby().catch(() => {});
+        if (this.mp) this.mp.leave();
+        this.lobby = null;
+        this.mp = null;
+        this.state = 'MENU';
     }
 
     updateMPLobby(dt) {
-        // Type code via keyboard (when in 'join' input mode)
-        if (this.mpLobbyMode === 'join') {
-            for (const k of Object.keys(this.input.keys)) {
-                if (this.input.keys[k] && k.length === 1 && /^[a-z0-9]$/.test(k)) {
-                    if (this.mpCodeBuf.length < 4) {
-                        this.mpCodeBuf += k.toUpperCase();
-                    }
-                    this.input.keys[k] = false;
-                }
-            }
-            if (this.input.isKeyDown('backspace')) {
-                this.mpCodeBuf = this.mpCodeBuf.slice(0, -1);
-                this.input.keys['backspace'] = false;
-            }
-            if (this.input.isKeyDown('enter')) {
-                this.input.keys['enter'] = false;
-                this._joinRoomFlow();
-            }
-        }
-
         if (this.input.isKeyDown('escape')) {
             this.input.keys['escape'] = false;
-            if (this.mp) this.mp.leave();
-            this.mp = null;
-            this.state = 'MENU';
+            this._cancelMatchmaking();
             return;
         }
 
@@ -3917,69 +3896,20 @@ class Game {
 
         // Back button (top-left)
         if (mx > 20 && mx < 120 && my > 20 && my < 56) {
-            if (this.mp) this.mp.leave();
-            this.mp = null;
-            this.state = 'MENU';
+            this._cancelMatchmaking();
             return;
         }
 
-        if (this.mpLobbyMode === 'menu') {
-            // Host button — generates a code
-            if (mx > CANVAS_WIDTH / 2 - 200 && mx < CANVAS_WIDTH / 2 - 20 &&
-                my > 280 && my < 360) {
-                this._hostRoomFlow();
-                return;
+        // Cancel button (centered) — works whether searching or showing failure
+        const cx = CANVAS_WIDTH / 2 - 80, cy = 540;
+        if (mx > cx && mx < cx + 160 && my > cy && my < cy + 40) {
+            if (this.mpLobbyMode === 'failed') {
+                // Retry from a failure state
+                this.openMPLobby();
+            } else {
+                this._cancelMatchmaking();
             }
-            // Join button — opens code input
-            if (mx > CANVAS_WIDTH / 2 + 20 && mx < CANVAS_WIDTH / 2 + 200 &&
-                my > 280 && my < 360) {
-                this.mpLobbyMode = 'join';
-                this.mpCodeBuf = '';
-                this.mpStatus = 'Enter the host\'s code';
-                this.mpStatusColor = '#FFFFFF';
-                return;
-            }
-        } else if (this.mpLobbyMode === 'join') {
-            // Connect button
-            if (mx > CANVAS_WIDTH / 2 - 100 && mx < CANVAS_WIDTH / 2 + 100 &&
-                my > 600 && my < 644) {
-                this._joinRoomFlow();
-                return;
-            }
-            // Cancel back to menu
-            if (mx > CANVAS_WIDTH - 130 && mx < CANVAS_WIDTH - 20 &&
-                my > 600 && my < 644) {
-                this.mpLobbyMode = 'menu';
-                this.mpStatus = '';
-                return;
-            }
-            // On-screen keyboard tap
-            const tile = this._mpKeyboardHit(mx, my);
-            if (tile) {
-                if (tile.isBackspace) {
-                    this.mpCodeBuf = this.mpCodeBuf.slice(0, -1);
-                } else if (this.mpCodeBuf.length < 4) {
-                    this.mpCodeBuf += tile.ch;
-                    // Auto-connect when 4 chars are entered
-                    if (this.mpCodeBuf.length === 4) {
-                        // small delay so the user sees the last letter fill
-                        setTimeout(() => {
-                            if (this.mpLobbyMode === 'join') this._joinRoomFlow();
-                        }, 300);
-                    }
-                }
-                return;
-            }
-        } else if (this.mpLobbyMode === 'host') {
-            // Cancel host
-            if (mx > CANVAS_WIDTH / 2 - 80 && mx < CANVAS_WIDTH / 2 + 80 &&
-                my > 540 && my < 580) {
-                if (this.mp) this.mp.leave();
-                this.mp = null;
-                this.mpLobbyMode = 'menu';
-                this.mpStatus = '';
-                return;
-            }
+            return;
         }
     }
 
@@ -4009,190 +3939,70 @@ class Game {
         ctx.font = '14px Arial';
         ctx.fillText('Win a 1v1 match for +' + MP_WIN_XP + ' XP', CANVAS_WIDTH / 2, 130);
 
-        if (this.mpLobbyMode === 'menu') {
-            // Host card
-            const hx = CANVAS_WIDTH / 2 - 200, hy = 280, hw = 180, hh = 80;
-            const hHover = mx > hx && mx < hx + hw && my > hy && my < hy + hh;
-            ctx.fillStyle = hHover ? '#3a4488' : '#222244';
-            ctx.fillRect(hx, hy, hw, hh);
-            ctx.strokeStyle = '#4488FF';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(hx, hy, hw, hh);
-            ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold 22px Arial';
-            ctx.fillText('🏠 HOST', hx + hw / 2, hy + 36);
-            ctx.fillStyle = '#AAA';
-            ctx.font = '11px Arial';
-            ctx.fillText('Get a code, share it', hx + hw / 2, hy + 60);
+        // Big animated spinner / status ring
+        const cx = CANVAS_WIDTH / 2, cy = 340;
+        const t = (performance.now() - (this.mpSearchStart || 0)) / 1000;
 
-            // Join card
-            const jx = CANVAS_WIDTH / 2 + 20, jy = 280, jw = 180, jh = 80;
-            const jHover = mx > jx && mx < jx + jw && my > jy && my < jy + jh;
-            ctx.fillStyle = jHover ? '#883a44' : '#442222';
-            ctx.fillRect(jx, jy, jw, jh);
-            ctx.strokeStyle = '#FF8844';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(jx, jy, jw, jh);
-            ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold 22px Arial';
-            ctx.fillText('🚪 JOIN', jx + jw / 2, jy + 36);
-            ctx.fillStyle = '#AAA';
-            ctx.font = '11px Arial';
-            ctx.fillText('Type your friend\'s code', jx + jw / 2, jy + 60);
-        }
-
-        if (this.mpLobbyMode === 'host') {
-            // Show the code in big letters
+        if (this.mpLobbyMode === 'searching') {
+            // Pulsing crossed-swords animation
+            ctx.save();
+            ctx.translate(cx, cy);
+            const pulse = 1 + Math.sin(t * 3) * 0.05;
+            ctx.scale(pulse, pulse);
             ctx.fillStyle = '#FFD700';
-            ctx.font = 'bold 32px Arial';
-            ctx.fillText('Your code:', CANVAS_WIDTH / 2, 270);
-            ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold 100px monospace';
-            ctx.fillText(this.mpCodeBuf, CANVAS_WIDTH / 2, 380);
-            ctx.fillStyle = '#AAA';
-            ctx.font = '14px Arial';
-            ctx.fillText('Tell your friend to type this code on their JOIN screen.', CANVAS_WIDTH / 2, 420);
-            ctx.fillText('Waiting for opponent...', CANVAS_WIDTH / 2, 442);
+            ctx.font = 'bold 80px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('⚔️', 0, 30);
+            ctx.restore();
 
-            // Cancel button
-            const cx = CANVAS_WIDTH / 2 - 80, cy = 540;
-            const cHover = mx > cx && mx < cx + 160 && my > cy && my < cy + 40;
-            ctx.fillStyle = cHover ? '#5a3a3a' : '#3a2a2a';
-            ctx.fillRect(cx, cy, 160, 40);
-            ctx.strokeStyle = '#FF6666';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(cx, cy, 160, 40);
-            ctx.fillStyle = '#FFF';
-            ctx.font = 'bold 16px Arial';
-            ctx.fillText('Cancel', CANVAS_WIDTH / 2, cy + 26);
-        }
-
-        if (this.mpLobbyMode === 'join') {
-            ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold 20px Arial';
-            ctx.fillText('Enter the host\'s 4-letter code', CANVAS_WIDTH / 2, 200);
-
-            // 4 input boxes (slightly smaller / higher to make room for keyboard)
-            const boxSize = 56, boxGap = 10;
-            const totalW = boxSize * 4 + boxGap * 3;
-            const startX = (CANVAS_WIDTH - totalW) / 2;
-            const boxY = 220;
-            for (let i = 0; i < 4; i++) {
-                const bx = startX + i * (boxSize + boxGap);
-                const filled = i < this.mpCodeBuf.length;
-                ctx.fillStyle = filled ? '#222244' : '#111122';
-                ctx.fillRect(bx, boxY, boxSize, boxSize);
-                ctx.strokeStyle = filled ? '#FF8844' : '#444488';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(bx, boxY, boxSize, boxSize);
-                if (filled) {
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.font = 'bold 38px monospace';
-                    ctx.fillText(this.mpCodeBuf[i], bx + boxSize / 2, boxY + 42);
-                }
+            // Rotating dots ring around it
+            ctx.save();
+            ctx.translate(cx, cy);
+            for (let i = 0; i < 8; i++) {
+                const a = (t * 1.5 + i / 8) * Math.PI * 2;
+                const r = 90;
+                const alpha = 0.3 + 0.7 * ((Math.sin(t * 4 - i * 0.5) + 1) / 2);
+                ctx.fillStyle = `rgba(255, 200, 100, ${alpha})`;
+                ctx.beginPath();
+                ctx.arc(Math.cos(a) * r, Math.sin(a) * r, 6, 0, Math.PI * 2);
+                ctx.fill();
             }
+            ctx.restore();
 
-            // ----- On-screen keyboard (works on mobile + desktop) -----
-            this._drawMPKeyboard(ctx, mx, my);
-
-            // Connect button
-            const ccx = CANVAS_WIDTH / 2 - 100, ccy = 600;
-            const ccHover = mx > ccx && mx < ccx + 200 && my > ccy && my < ccy + 44;
-            const ready = this.mpCodeBuf.length === 4;
-            ctx.fillStyle = ready ? (ccHover ? '#5599FF' : '#4488FF') : '#445566';
-            ctx.fillRect(ccx, ccy, 200, 44);
-            ctx.strokeStyle = '#FFF';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(ccx, ccy, 200, 44);
-            ctx.fillStyle = '#FFF';
-            ctx.font = 'bold 18px Arial';
-            ctx.fillText('CONNECT', CANVAS_WIDTH / 2, ccy + 28);
-
-            // Cancel button (smaller, top-right of keyboard)
-            const cancelY = 600;
-            const cancelX = CANVAS_WIDTH - 130;
-            const cancelHover = mx > cancelX && mx < cancelX + 110 && my > cancelY && my < cancelY + 44;
-            ctx.fillStyle = cancelHover ? '#5a3a3a' : '#3a2a2a';
-            ctx.fillRect(cancelX, cancelY, 110, 44);
-            ctx.strokeStyle = '#FF6666';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(cancelX, cancelY, 110, 44);
-            ctx.fillStyle = '#FFF';
-            ctx.font = 'bold 14px Arial';
-            ctx.fillText('Cancel', cancelX + 55, cancelY + 27);
-        }
-
-        if (this.mpLobbyMode === 'connecting') {
-            ctx.fillStyle = '#FFD700';
+            // Status text
+            ctx.fillStyle = '#FFFFFF';
             ctx.font = 'bold 22px Arial';
-            ctx.fillText('Connecting...', CANVAS_WIDTH / 2, 380);
+            ctx.textAlign = 'center';
+            ctx.fillText(this.mpStatus || 'Searching for an opponent...', cx, cy + 140);
+
+            // Elapsed time
+            ctx.fillStyle = '#888';
+            ctx.font = '14px Arial';
+            ctx.fillText(`${Math.floor(t)}s elapsed`, cx, cy + 168);
         }
 
-        // Status line
-        if (this.mpStatus) {
-            ctx.fillStyle = this.mpStatusColor;
-            ctx.font = 'bold 16px Arial';
-            ctx.fillText(this.mpStatus, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 80);
+        if (this.mpLobbyMode === 'failed') {
+            ctx.fillStyle = '#FF6666';
+            ctx.font = 'bold 60px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('⚠️', cx, cy + 20);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 22px Arial';
+            ctx.fillText(this.mpStatus || 'Matchmaking failed', cx, cy + 80);
         }
-    }
 
-    // Layout for the on-screen alphabet keyboard
-    _mpKeyboardLayout() {
-        // 7-column grid; 25 letters minus skipped ambiguous chars (matches host code alphabet)
-        const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'.split('');
-        const cols = 7;
-        const tileW = 60, tileH = 50, gap = 6;
-        const rows = Math.ceil(chars.length / cols);
-        const totalW = cols * tileW + (cols - 1) * gap;
-        const startX = (CANVAS_WIDTH - totalW) / 2;
-        const startY = 320;
-
-        const tiles = [];
-        for (let i = 0; i < chars.length; i++) {
-            const col = i % cols, row = Math.floor(i / cols);
-            tiles.push({
-                ch: chars[i],
-                x: startX + col * (tileW + gap),
-                y: startY + row * (tileH + gap),
-                w: tileW, h: tileH
-            });
-        }
-        // Backspace at the bottom row
-        const lastRow = startY + rows * (tileH + gap);
-        tiles.push({
-            ch: '⌫', isBackspace: true,
-            x: CANVAS_WIDTH / 2 - 70, y: lastRow,
-            w: 140, h: tileH
-        });
-        return tiles;
-    }
-
-    _drawMPKeyboard(ctx, mx, my) {
-        const tiles = this._mpKeyboardLayout();
-        ctx.font = 'bold 20px Arial';
+        // Cancel / Retry button
+        const bx = CANVAS_WIDTH / 2 - 80, by = 540;
+        const bHover = mx > bx && mx < bx + 160 && my > by && my < by + 40;
+        ctx.fillStyle = bHover ? '#5a3a3a' : '#3a2a2a';
+        ctx.fillRect(bx, by, 160, 40);
+        ctx.strokeStyle = '#FF6666';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx, by, 160, 40);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 16px Arial';
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        for (const t of tiles) {
-            const hover = mx >= t.x && mx <= t.x + t.w && my >= t.y && my <= t.y + t.h;
-            ctx.fillStyle = t.isBackspace
-                ? (hover ? '#7a3a3a' : '#3a2a2a')
-                : (hover ? '#445588' : '#222244');
-            ctx.fillRect(t.x, t.y, t.w, t.h);
-            ctx.strokeStyle = t.isBackspace ? '#FF8866' : '#5566AA';
-            ctx.lineWidth = 1.5;
-            ctx.strokeRect(t.x, t.y, t.w, t.h);
-            ctx.fillStyle = '#FFF';
-            ctx.fillText(t.ch, t.x + t.w / 2, t.y + t.h / 2 + 1);
-        }
-        ctx.textBaseline = 'alphabetic';
-    }
-
-    _mpKeyboardHit(mx, my) {
-        const tiles = this._mpKeyboardLayout();
-        for (const t of tiles) {
-            if (mx >= t.x && mx <= t.x + t.w && my >= t.y && my <= t.y + t.h) return t;
-        }
-        return null;
+        ctx.fillText(this.mpLobbyMode === 'failed' ? 'Retry' : 'Cancel', cx, by + 26);
     }
 
     // ==================== 1V1 FIGHT ====================
@@ -4200,6 +4010,11 @@ class Game {
     _startMPFight() {
         this.state = 'MP_FIGHT';
         this.music.play('boss');
+        // Match started — release our lobby slot so the next player
+        // looking for a game doesn't try to connect to us.
+        if (this.lobby) {
+            this.lobby.leaveLobby().catch(() => {});
+        }
         this.mpResult = null;
         this._mpPendingResult = null;
         this._mpPendingResultDelay = 0;
@@ -4543,11 +4358,11 @@ class Game {
         ctx.strokeStyle = '#FFF';
         ctx.strokeRect(CANVAS_WIDTH - 220, 25, 200, 14);
 
-        // Center: code
+        // Center: match label
         ctx.textAlign = 'center';
         ctx.fillStyle = '#FFD700';
         ctx.font = 'bold 14px Arial';
-        ctx.fillText('1V1 — Room ' + (this.mp ? this.mp.code : '????'), CANVAS_WIDTH / 2, 32);
+        ctx.fillText('1V1 ONLINE', CANVAS_WIDTH / 2, 32);
 
         // Inventory + emote button still useful
         this.hud.drawInventoryBar(ctx, this.player, this.input);
