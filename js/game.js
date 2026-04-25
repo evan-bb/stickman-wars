@@ -4134,8 +4134,11 @@ class Game {
 
         const cam = this._mpCamera;
         const input = this.input;
+        const touchSprint = this.touch.active && this.touch.sprintPressed;
 
-        // Player movement (iso-style like other interior fights)
+        // Player movement (iso-style like other interior fights). Mirrors
+        // player.update() including the R-key sprint with stamina drain so
+        // 1v1 has the same feel as the PvE mode.
         let mx = 0, my = 0;
         if (input.isKeyDown('w') || input.isKeyDown('arrowup'))    { mx -= 1; my -= 1; }
         if (input.isKeyDown('s') || input.isKeyDown('arrowdown'))  { mx += 1; my += 1; }
@@ -4143,8 +4146,30 @@ class Game {
         if (input.isKeyDown('d') || input.isKeyDown('arrowright')) { mx += 1; my -= 1; }
         const mLen = Math.sqrt(mx * mx + my * my);
         if (mLen > 0) { mx /= mLen; my /= mLen; }
-        this.player.vx = mx * this.player.speed;
-        this.player.vy = my * this.player.speed;
+
+        // Sprint: R key on desktop, sprint button on mobile.
+        const moving = (Math.abs(mx) > 0 || Math.abs(my) > 0);
+        const wantsSprint = (input.isKeyDown('r') || touchSprint) && moving;
+        let speedMod = 1.0;
+        if (wantsSprint && !this.player.staminaExhausted && this.player.stamina > 0) {
+            this.player.sprinting = true;
+            this.player.stamina -= this.player.staminaDrain * dt;
+            if (this.player.stamina <= 0) {
+                this.player.stamina = 0;
+                this.player.staminaExhausted = true;
+                this.player.sprinting = false;
+            }
+            speedMod = 1.6;
+        } else {
+            this.player.sprinting = false;
+            this.player.stamina = Math.min(this.player.maxStamina, this.player.stamina + this.player.staminaRegen * dt);
+            if (this.player.staminaExhausted && this.player.stamina >= this.player.maxStamina * 0.3) {
+                this.player.staminaExhausted = false;
+            }
+        }
+
+        this.player.vx = mx * this.player.speed * speedMod;
+        this.player.vy = my * this.player.speed * speedMod;
         this.player.x += this.player.vx * dt;
         this.player.y += this.player.vy * dt;
         this.player.x = clamp(this.player.x, 30, MP_ARENA_WIDTH - 30);
@@ -4161,11 +4186,26 @@ class Game {
         // Interpolate opponent stub toward latest network state
         if (this.mpOpponentTarget) {
             const t = this.mpOpponent || (this.mpOpponent = { ...this.mpOpponentTarget });
+            const prevX = t.x;
+            const prevY = t.y;
             const lerpAmt = Math.min(1, dt * 12);
             t.x = lerp(t.x ?? this.mpOpponentTarget.x, this.mpOpponentTarget.x, lerpAmt);
             t.y = lerp(t.y ?? this.mpOpponentTarget.y, this.mpOpponentTarget.y, lerpAmt);
             t.facing = this.mpOpponentTarget.facing;
             t.hp = this.mpOpponentTarget.hp;
+            // Derive velocity from interpolated position so the walk cycle
+            // animates without needing the sender to ship vx/vy.
+            if (dt > 0 && prevX !== undefined && prevY !== undefined) {
+                t.vx = (t.x - prevX) / dt;
+                t.vy = (t.y - prevY) / dt;
+            } else {
+                t.vx = 0; t.vy = 0;
+            }
+            const speed = Math.sqrt(t.vx * t.vx + t.vy * t.vy);
+            if (speed > 5) {
+                t.moveFacing = Math.atan2(t.vy, t.vx);
+                t.walkTimer = (t.walkTimer || 0) + dt;
+            }
             // Update stub for hit detection
             this._mpOppStub.x = t.x;
             this._mpOppStub.y = t.y;
@@ -4281,8 +4321,10 @@ class Game {
                 x: this._mpOppStub.x ?? this.mpOpponent.x,
                 y: this._mpOppStub.y ?? this.mpOpponent.y,
                 facing: this.mpOpponent.facing || 0,
-                vx: 0, vy: 0,
-                walkTimer: this.gameTime, moveFacing: this.mpOpponent.facing,
+                vx: this.mpOpponent.vx || 0,
+                vy: this.mpOpponent.vy || 0,
+                walkTimer: this.mpOpponent.walkTimer || 0,
+                moveFacing: this.mpOpponent.moveFacing != null ? this.mpOpponent.moveFacing : this.mpOpponent.facing,
                 attackAnim: this.mpOpponent.attack ? 0.5 : 0,
                 health: this.mpOpponent.hp ?? 100, maxHealth: 100,
                 alive: this._mpOppStub.alive, isPlayer: false, team: TEAMS.RED,
