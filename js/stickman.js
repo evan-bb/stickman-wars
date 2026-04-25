@@ -9,6 +9,24 @@ function drawStickman(ctx, entity, camera) {
     const color = TEAM_COLORS[entity.team] || '#FFFFFF';
     const isPlayer = entity.isPlayer;
 
+    // Dance emote: play a full custom dance animation instead of the usual pose
+    if (isPlayer && entity.alive && entity.emote && entity.emote.key === 'dance') {
+        drawDancingStickman(ctx, entity, x, y, color);
+        if (window.game && window.game.progression) {
+            // Compute current head position for hat (matches dance routine)
+            const t = (EMOTE_DURATION - entity.emoteTimer) * 6;
+            const bounce = -Math.abs(Math.sin(t)) * 4;
+            const sway = Math.sin(t * 0.5) * 4;
+            const headY = y - 24 + bounce;
+            window.game.progression.drawHat(ctx, x + sway, headY, window.game.progression.equippedHat);
+        }
+        // Health bar still shown if hurt
+        if (entity.health < entity.maxHealth) {
+            drawHealthBar(ctx, x, y - 32, 24, 3, entity.health / entity.maxHealth, color);
+        }
+        return;
+    }
+
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth = isPlayer ? 2.5 : 2;
@@ -321,6 +339,129 @@ function drawWeaponSwing(ctx, x, armY, facing, swing, weapon) {
         ctx.stroke();
     }
     ctx.restore();
+}
+
+// Custom dance pose with bouncing hips, swaying body, and "Saturday Night Fever"
+// alternating disco-point arms. Time-based, runs while the dance emote is active.
+function drawDancingStickman(ctx, entity, x, y, color) {
+    // Phase derived from emote elapsed time (smooth & deterministic)
+    const elapsed = (EMOTE_DURATION || 2.4) - entity.emoteTimer;
+    const t = elapsed * 6;          // beat speed
+    const beat = Math.sin(t);
+    const beat2 = Math.sin(t * 2);
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = '#FFFFFF';
+    ctx.shadowBlur = 6;
+
+    // Hip sway side to side, body bounce on each beat
+    const sway = Math.sin(t * 0.5) * 4;        // left/right hip sway
+    const bounce = -Math.abs(beat) * 4;        // up/down bounce
+
+    const hipX = x + sway;
+    const hipY = y + bounce;
+    const shoulderX = hipX + sway * 0.4;       // shoulders sway opposite to hips a bit
+    const shoulderY = hipY - 16;
+    const headY = shoulderY - 8;
+
+    // Head (with a slight tilt that follows the beat)
+    const headTilt = Math.sin(t) * 0.2;
+    ctx.beginPath();
+    ctx.arc(hipX + sway * 0.4 + Math.sin(headTilt) * 2, headY, 6, 0, Math.PI * 2);
+    ctx.stroke();
+    if (entity.isPlayer) {
+        ctx.fillStyle = color;
+        ctx.fill();
+    }
+
+    // Torso
+    ctx.beginPath();
+    ctx.moveTo(shoulderX, shoulderY);
+    ctx.lineTo(hipX, hipY);
+    ctx.stroke();
+
+    // ---- Arms: alternating disco point ----
+    // Up-arm goes diagonally up, down-arm goes diagonally down hip-level.
+    // They swap on each beat.
+    const armUp = beat > 0;
+    const upAngle = armUp ? -1.1 : -2.0;       // upper diagonal angle
+    const downAngle = armUp ? 0.6 : 0.6;       // lower
+    const upDx = Math.cos(upAngle) * 14;
+    const upDy = Math.sin(upAngle) * 14;
+    const downDx = Math.cos(downAngle) * 12;
+    const downDy = Math.sin(downAngle) * 12;
+
+    // Right arm (one of them up, the other down — switches with beat)
+    const rightUp = armUp;
+    const rightDx = rightUp ? upDx : -downDx;  // up arm reaches right; down arm hangs left
+    const rightDy = rightUp ? upDy : downDy;
+    ctx.beginPath();
+    ctx.moveTo(shoulderX, shoulderY + 2);
+    // Elbow bend
+    const rmidX = shoulderX + rightDx * 0.55;
+    const rmidY = shoulderY + 2 + rightDy * 0.55;
+    ctx.lineTo(rmidX, rmidY);
+    ctx.lineTo(shoulderX + rightDx, shoulderY + 2 + rightDy);
+    ctx.stroke();
+
+    // Left arm (mirror)
+    const leftDx = rightUp ? -downDx : upDx * -1;  // mirror behavior
+    const leftDy = rightUp ? downDy : upDy;
+    ctx.beginPath();
+    ctx.moveTo(shoulderX, shoulderY + 2);
+    const lmidX = shoulderX + leftDx * 0.55;
+    const lmidY = shoulderY + 2 + leftDy * 0.55;
+    ctx.lineTo(lmidX, lmidY);
+    ctx.lineTo(shoulderX + leftDx, shoulderY + 2 + leftDy);
+    ctx.stroke();
+
+    // ---- Legs: bouncy alternating step (one bent each beat) ----
+    const legDrop = 14;
+    const stepLeftRaised = beat2 > 0;
+    // Left leg
+    {
+        const raised = stepLeftRaised;
+        const footX = hipX - 5 + (raised ? 2 : 0);
+        const footY = hipY + legDrop - (raised ? 5 : 0);
+        const kneeX = hipX - 4 + (raised ? -1 : 0);
+        const kneeY = hipY + 7 - (raised ? 3 : 0);
+        ctx.beginPath();
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(kneeX, kneeY);
+        ctx.lineTo(footX, footY);
+        ctx.stroke();
+    }
+    // Right leg
+    {
+        const raised = !stepLeftRaised;
+        const footX = hipX + 5 + (raised ? -2 : 0);
+        const footY = hipY + legDrop - (raised ? 5 : 0);
+        const kneeX = hipX + 4 + (raised ? 1 : 0);
+        const kneeY = hipY + 7 - (raised ? 3 : 0);
+        ctx.beginPath();
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(kneeX, kneeY);
+        ctx.lineTo(footX, footY);
+        ctx.stroke();
+    }
+
+    ctx.restore();
+
+    // Floor sparkle ring on each beat (visual flair)
+    const ringPulse = Math.max(0, beat);
+    if (ringPulse > 0) {
+        ctx.save();
+        ctx.strokeStyle = `rgba(255, 102, 204, ${0.4 * ringPulse})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(x, y + legDrop, 16 + ringPulse * 6, 5 + ringPulse * 2, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+    }
 }
 
 function drawHealthBar(ctx, x, y, width, height, pct, color) {
