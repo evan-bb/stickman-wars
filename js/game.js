@@ -3097,9 +3097,11 @@ class Game {
             this.emoteWheelHover = -1;
         }
 
-        // Click on a sector → play emote and close
-        if (this.input.consumeClick() && this.emoteWheelHover >= 0) {
-            this.player.playEmote(EMOTES[this.emoteWheelHover]);
+        // Click on a sector → play emote and close. Click outside → close.
+        if (this.input.consumeClick()) {
+            if (this.emoteWheelHover >= 0) {
+                this.player.playEmote(EMOTES[this.emoteWheelHover]);
+            }
             this.emoteWheelOpen = false;
         }
 

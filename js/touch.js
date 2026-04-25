@@ -101,6 +101,20 @@ class TouchControls {
         return px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h;
     }
 
+    // Bounding box of the floating emote button. Match game.js _drawEmoteButton.
+    _inEmoteButtonBox(px, py) {
+        const bw = 44, bh = 44;
+        const bx = CANVAS_WIDTH - bw - 12;
+        const by = 200;
+        const slop = 8;
+        return px >= bx - slop && px <= bx + bw + slop &&
+               py >= by - slop && py <= by + bh + slop;
+    }
+
+    _emoteWheelOpen() {
+        return !!(window.game && window.game.emoteWheelOpen);
+    }
+
     onTouchStart(e) {
         e.preventDefault();
         for (const touch of e.changedTouches) {
@@ -139,6 +153,23 @@ class TouchControls {
             // Inventory bar: taps here act as clicks (not joystick / not attack).
             // Lets the player select any slot, including ones in the left-half joystick zone.
             if (this._inInventoryBox(pos.x, pos.y)) {
+                this.input.mouseX = pos.x;
+                this.input.mouseY = pos.y;
+                this.input.mouseClicked = true;
+                continue;
+            }
+
+            // Emote button: tap to open/close the wheel; never trigger joystick.
+            if (this._inEmoteButtonBox(pos.x, pos.y)) {
+                this.input.mouseX = pos.x;
+                this.input.mouseY = pos.y;
+                this.input.mouseClicked = true;
+                continue;
+            }
+
+            // While the emote wheel is OPEN, every tap is a click — pick an emote
+            // or tap outside to close. Don't spawn the joystick.
+            if (this._emoteWheelOpen()) {
                 this.input.mouseX = pos.x;
                 this.input.mouseY = pos.y;
                 this.input.mouseClicked = true;
