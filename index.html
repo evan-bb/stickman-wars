@@ -3,9 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1a1a2e">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Stickman Wars">
+    <meta name="mobile-web-app-capable" content="yes">
     <title>Stickman Wars</title>
-    <link rel="icon" href="data:,">
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/icons/icon.svg">
+    <link rel="manifest" href="/manifest.webmanifest">
     <style>
         * {
             margin: 0;
@@ -112,5 +118,18 @@
     <script src="js/multiplayer.js?v=20260426c"></script>
     <script src="js/game.js?v=20260426c"></script>
     <script src="js/main.js?v=20260426c"></script>
+
+    <script>
+        // Register the service worker so the game installs as a PWA and
+        // works offline after the first visit. Only attempt on HTTPS or
+        // localhost — file:// or http:// non-localhost won't allow it.
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch((err) => {
+                    console.warn('SW registration failed:', err);
+                });
+            });
+        }
+    </script>
 </body>
 </html>

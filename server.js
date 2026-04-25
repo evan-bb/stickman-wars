@@ -7,7 +7,10 @@ const mimeTypes = {
     '.js': 'text/javascript',
     '.css': 'text/css',
     '.png': 'image/png',
-    '.jpg': 'image/jpeg'
+    '.jpg': 'image/jpeg',
+    '.svg': 'image/svg+xml',
+    '.webmanifest': 'application/manifest+json',
+    '.json': 'application/json'
 };
 
 const server = http.createServer((req, res) => {
