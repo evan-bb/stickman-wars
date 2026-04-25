@@ -15,6 +15,10 @@ class ProgressionSystem {
         this.equippedHat = 'none';
         this.equippedTrail = 'none';
 
+        // Live trail particles (persistent, world-space)
+        this._trailParticles = [];
+        this._trailSpawnAccumulator = 0;
+
         // Level-up animation state
         this.levelUpTimer = 0;
         this.levelUpLevel = 0;
@@ -372,64 +376,107 @@ class ProgressionSystem {
 
     drawTrail(ctx, entity, camera) {
         const trail = this.equippedTrail;
-        if (!trail || trail === 'none') return;
+        if (!trail || trail === 'none') {
+            this._trailParticles.length = 0;
+            return;
+        }
         if (!entity.alive) return;
+
+        const dt = (window.game && window.game._lastDt) || 0.016;
         const isMoving = Math.abs(entity.vx || 0) > 5 || Math.abs(entity.vy || 0) > 5;
-        if (!isMoving) return;
 
-        const pos = camera.worldToScreen(entity.x, entity.y);
+        // ---- Spawn new particles ----
+        if (isMoving) {
+            // Spawn rate per second, deterministic via accumulator
+            const spawnRate = trail === 'fire' ? 30 : trail === 'sparkle' ? 18 : 22;
+            this._trailSpawnAccumulator += dt * spawnRate;
+            const toSpawn = Math.floor(this._trailSpawnAccumulator);
+            this._trailSpawnAccumulator -= toSpawn;
+
+            for (let i = 0; i < toSpawn; i++) {
+                this._trailParticles.push(this._spawnTrailParticle(trail, entity));
+            }
+        }
+
+        // ---- Update particles ----
+        for (const p of this._trailParticles) {
+            p.age += dt;
+            // Per-trail drift behavior
+            if (trail === 'fire' || trail === 'sparkle') {
+                p.y -= p.driftY * dt;          // floats up
+            }
+            p.x += p.driftX * dt;
+            p.y += p.gravity * dt;             // settles down (dust/rainbow)
+        }
+        // Cull expired
+        this._trailParticles = this._trailParticles.filter(p => p.age < p.life);
+
+        // ---- Render: oldest first so newest appear on top ----
         ctx.save();
+        for (const p of this._trailParticles) {
+            if (!camera.isVisible(p.x, p.y, 30)) continue;
+            const pos = camera.worldToScreen(p.x, p.y);
+            const lifePct = p.age / p.life;
+            const alpha = (1 - lifePct) * p.maxAlpha;
+            const radius = p.r0 * (1 - lifePct * 0.6);
 
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (p.sparkle) {
+                ctx.strokeStyle = `rgba(255,255,255,${alpha * 0.8})`;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(pos.x - 4, pos.y);
+                ctx.lineTo(pos.x + 4, pos.y);
+                ctx.moveTo(pos.x, pos.y - 4);
+                ctx.lineTo(pos.x, pos.y + 4);
+                ctx.stroke();
+            }
+        }
+        ctx.globalAlpha = 1;
+        ctx.restore();
+    }
+
+    _spawnTrailParticle(trail, entity) {
+        const baseX = entity.x + randomRange(-4, 4);
+        const baseY = entity.y + randomRange(2, 6);
         switch (trail) {
             case 'dust':
-                for (let i = 0; i < 2; i++) {
-                    const ox = randomRange(-8, 8);
-                    const oy = randomRange(8, 16);
-                    ctx.globalAlpha = 0.25;
-                    ctx.fillStyle = '#AA9977';
-                    ctx.beginPath();
-                    ctx.arc(pos.x + ox, pos.y + oy, randomRange(2, 4), 0, Math.PI * 2);
-                    ctx.fill();
-                }
-                break;
-
+                return {
+                    x: baseX, y: baseY,
+                    driftX: randomRange(-4, 4), gravity: 4,
+                    r0: randomRange(2.5, 4.5), color: randomFromArray(['#A89070', '#C4AA80', '#998060']),
+                    age: 0, life: randomRange(0.45, 0.7), maxAlpha: 0.45, sparkle: false
+                };
             case 'fire':
-                for (let i = 0; i < 3; i++) {
-                    const ox = randomRange(-6, 6);
-                    const oy = randomRange(4, 14);
-                    ctx.globalAlpha = 0.5;
-                    ctx.fillStyle = ['#FF4400', '#FF8800', '#FFCC00'][i];
-                    ctx.beginPath();
-                    ctx.arc(pos.x + ox, pos.y + oy, randomRange(2, 5), 0, Math.PI * 2);
-                    ctx.fill();
-                }
-                break;
-
+                return {
+                    x: baseX, y: baseY,
+                    driftX: randomRange(-3, 3), driftY: randomRange(20, 35), gravity: 0,
+                    r0: randomRange(3, 5),
+                    color: randomFromArray(['#FFEE66', '#FFB840', '#FF7733', '#FF3322']),
+                    age: 0, life: randomRange(0.35, 0.55), maxAlpha: 0.85, sparkle: false
+                };
             case 'sparkle':
-                for (let i = 0; i < 2; i++) {
-                    const ox = randomRange(-10, 10);
-                    const oy = randomRange(-5, 15);
-                    ctx.globalAlpha = 0.7;
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.beginPath();
-                    ctx.arc(pos.x + ox, pos.y + oy, randomRange(1, 3), 0, Math.PI * 2);
-                    ctx.fill();
-                }
-                break;
-
-            case 'rainbow':
-                const colors = ['#FF0000', '#FF7700', '#FFFF00', '#00FF00', '#0077FF', '#8800FF'];
-                for (let i = 0; i < 3; i++) {
-                    const ox = randomRange(-6, 6);
-                    const oy = randomRange(5, 15);
-                    ctx.globalAlpha = 0.5;
-                    ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
-                    ctx.beginPath();
-                    ctx.arc(pos.x + ox, pos.y + oy, randomRange(2, 4), 0, Math.PI * 2);
-                    ctx.fill();
-                }
-                break;
+                return {
+                    x: baseX + randomRange(-6, 6), y: baseY + randomRange(-6, 6),
+                    driftX: randomRange(-5, 5), driftY: randomRange(8, 18), gravity: 0,
+                    r0: randomRange(1.2, 2.2), color: '#FFFFFF',
+                    age: 0, life: randomRange(0.5, 0.9), maxAlpha: 0.95, sparkle: true
+                };
+            case 'rainbow': {
+                const rainbow = ['#FF3333', '#FF8833', '#FFE633', '#33CC33', '#3399FF', '#9933CC'];
+                return {
+                    x: baseX, y: baseY,
+                    driftX: randomRange(-4, 4), gravity: 6,
+                    r0: randomRange(2.5, 4),
+                    color: rainbow[Math.floor(Math.random() * rainbow.length)],
+                    age: 0, life: randomRange(0.55, 0.85), maxAlpha: 0.85, sparkle: false
+                };
+            }
         }
-        ctx.restore();
     }
 }

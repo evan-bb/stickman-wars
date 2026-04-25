@@ -725,24 +725,50 @@ class Game {
                 ctx.fillText('(no hat)', iconCx, iconCy);
             }
         } else {
-            // Trail preview: draw a small stickman with trail particles
-            ctx.strokeStyle = '#CCC';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(iconCx, iconCy, 8, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(iconCx, iconCy + 8);
-            ctx.lineTo(iconCx, iconCy + 20);
-            ctx.stroke();
-            // Mini trail preview
+            // Trail preview: stickman appears to be running rightward, trail follows
+            const t = Date.now() / 1000;
+            const stickX = iconCx + 12; // shifted right; trail flows from left-behind
+            const stickY = iconCy;
+
+            // Draw the trail BEHIND the stickman first so it appears under
             if (item.key !== 'none') {
-                this._drawMiniTrail(ctx, iconCx, iconCy + 22, item.key);
-            } else {
+                this._drawMiniTrail(ctx, stickX, stickY, item.key, t);
+            }
+
+            // Mini stickman body — head, spine, walking legs
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            // Head
+            ctx.beginPath();
+            ctx.arc(stickX, stickY - 8, 5, 0, Math.PI * 2);
+            ctx.stroke();
+            // Spine
+            ctx.beginPath();
+            ctx.moveTo(stickX, stickY - 3);
+            ctx.lineTo(stickX, stickY + 8);
+            ctx.stroke();
+            // Walking legs (alternating swing)
+            const legSwing = Math.sin(t * 8) * 4;
+            ctx.beginPath();
+            ctx.moveTo(stickX, stickY + 8);
+            ctx.lineTo(stickX + legSwing, stickY + 16);
+            ctx.moveTo(stickX, stickY + 8);
+            ctx.lineTo(stickX - legSwing, stickY + 16);
+            ctx.stroke();
+            // Arms (slight swing opposite to legs)
+            ctx.beginPath();
+            ctx.moveTo(stickX, stickY + 1);
+            ctx.lineTo(stickX - legSwing * 0.5, stickY + 6);
+            ctx.moveTo(stickX, stickY + 1);
+            ctx.lineTo(stickX + legSwing * 0.5, stickY + 6);
+            ctx.stroke();
+
+            if (item.key === 'none') {
                 ctx.fillStyle = '#888';
                 ctx.font = '10px Arial';
                 ctx.textAlign = 'center';
-                ctx.fillText('(no trail)', iconCx, iconCy);
+                ctx.fillText('(no trail)', iconCx, iconCy + 25);
             }
         }
         ctx.restore();
@@ -769,49 +795,92 @@ class Game {
         }
     }
 
-    _drawMiniTrail(ctx, cx, cy, trail) {
-        // Simple static trail sample, not animated
+    _drawMiniTrail(ctx, cx, cy, trail, t) {
+        // Each particle is anchored to a phase that loops 0..1 over `lifetime` seconds.
+        // Particles spawn at the stickman's feet (cx) and drift backward (left).
+        const lifetime = 0.9; // seconds per particle cycle
+        const count = 8;
+        const trailLength = 28; // px from spawn to end-of-life
+
         switch (trail) {
-            case 'dust':
-                ctx.fillStyle = '#AA9977';
-                for (let i = 0; i < 3; i++) {
-                    ctx.globalAlpha = 0.5 - i * 0.12;
+            case 'dust': {
+                for (let i = 0; i < count; i++) {
+                    const phase = ((t / lifetime) + i / count) % 1;
+                    const px = cx - 4 - phase * trailLength;
+                    const py = cy + 12 + Math.sin(phase * Math.PI) * 2;
+                    const alpha = (1 - phase) * 0.55;
+                    const r = 3 - phase * 1.5;
+                    ctx.fillStyle = `rgba(180, 150, 110, ${alpha})`;
                     ctx.beginPath();
-                    ctx.arc(cx + (i - 1) * 4, cy + i * 3, 3 - i * 0.5, 0, Math.PI * 2);
+                    ctx.arc(px, py, r, 0, Math.PI * 2);
                     ctx.fill();
                 }
                 break;
-            case 'fire':
-                const fireColors = ['#FFCC00', '#FF8800', '#FF4400'];
-                for (let i = 0; i < 3; i++) {
-                    ctx.globalAlpha = 0.7 - i * 0.15;
-                    ctx.fillStyle = fireColors[i];
+            }
+            case 'fire': {
+                const fireColors = ['#FFEE66', '#FFA630', '#FF4400'];
+                for (let i = 0; i < count; i++) {
+                    const phase = ((t / lifetime) + i / count) % 1;
+                    const px = cx - 3 - phase * trailLength;
+                    const py = cy + 8 + Math.sin(phase * Math.PI * 2 + i) * 2;
+                    const alpha = (1 - phase) * 0.85;
+                    const r = 4 - phase * 2.5;
+                    const c = fireColors[Math.floor(phase * fireColors.length)];
+                    ctx.fillStyle = c;
+                    ctx.globalAlpha = alpha;
                     ctx.beginPath();
-                    ctx.arc(cx + (i - 1) * 3, cy + i * 3, 3.5 - i * 0.5, 0, Math.PI * 2);
+                    ctx.arc(px, py, r, 0, Math.PI * 2);
                     ctx.fill();
                 }
+                ctx.globalAlpha = 1;
                 break;
-            case 'sparkle':
-                ctx.fillStyle = '#FFFFFF';
-                for (let i = 0; i < 4; i++) {
-                    ctx.globalAlpha = 0.8 - i * 0.15;
+            }
+            case 'sparkle': {
+                for (let i = 0; i < count; i++) {
+                    const phase = ((t / lifetime) + i / count) % 1;
+                    // Deterministic per-particle vertical jitter using i as seed
+                    const yJitter = Math.sin(i * 12.9898) * 4;
+                    const px = cx - 4 - phase * trailLength;
+                    const py = cy + 8 + yJitter * (1 - phase);
+                    const twinkle = 0.5 + 0.5 * Math.sin(t * 8 + i);
+                    const alpha = (1 - phase) * 0.9 * twinkle;
+                    const r = 1.6 + 0.6 * twinkle;
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.globalAlpha = alpha;
                     ctx.beginPath();
-                    ctx.arc(cx + (Math.random() - 0.5) * 10, cy + i * 2, 1.5, 0, Math.PI * 2);
+                    ctx.arc(px, py, r, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Cross-shaped sparkle
+                    ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.7})`;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(px - 3, py);
+                    ctx.lineTo(px + 3, py);
+                    ctx.moveTo(px, py - 3);
+                    ctx.lineTo(px, py + 3);
+                    ctx.stroke();
+                }
+                ctx.globalAlpha = 1;
+                break;
+            }
+            case 'rainbow': {
+                const rainbowColors = ['#FF3333', '#FF8833', '#FFE633', '#33CC33', '#3399FF', '#9933CC'];
+                for (let i = 0; i < count; i++) {
+                    const phase = ((t / lifetime) + i / count) % 1;
+                    const px = cx - 4 - phase * trailLength;
+                    const py = cy + 10 + Math.sin(phase * Math.PI * 2) * 2;
+                    const alpha = (1 - phase) * 0.85;
+                    const r = 3 - phase * 1.5;
+                    ctx.fillStyle = rainbowColors[i % rainbowColors.length];
+                    ctx.globalAlpha = alpha;
+                    ctx.beginPath();
+                    ctx.arc(px, py, r, 0, Math.PI * 2);
                     ctx.fill();
                 }
+                ctx.globalAlpha = 1;
                 break;
-            case 'rainbow':
-                const rainbowColors = ['#FF0000', '#FF7700', '#FFFF00', '#00FF00', '#0077FF', '#8800FF'];
-                for (let i = 0; i < 6; i++) {
-                    ctx.globalAlpha = 0.7;
-                    ctx.fillStyle = rainbowColors[i];
-                    ctx.beginPath();
-                    ctx.arc(cx + (i - 2.5) * 3, cy + 2, 2, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-                break;
+            }
         }
-        ctx.globalAlpha = 1;
     }
 
     // ==================== WEAPON SELECT ====================
