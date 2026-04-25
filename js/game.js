@@ -3775,8 +3775,7 @@ class Game {
                 spawnHitParticles(this.mpParticles, this.player.x, this.player.y, '#FF4444', 6);
                 this.mpParticles.push(new DamageNumber(this.player.x, this.player.y - 10, m.amount, '#FF4444'));
                 if (this.player.health <= 0) {
-                    this.player.alive = false;
-                    this._endMPFight('lose');
+                    this._killSelf();
                 }
             }
         });
@@ -3788,8 +3787,15 @@ class Game {
             }
         });
         mp.on('msg:win', (m) => {
-            // Opponent reports they died — we win
-            if (this.state === 'MP_FIGHT') this._endMPFight('win');
+            // Opponent reports they died (or that we lost). If we already saw it locally,
+            // do nothing. Otherwise, treat it as authoritative.
+            if (this.state !== 'MP_FIGHT' || this._mpPendingResult) return;
+            // 'winner' is the role of whoever won. If we're the winner, kill opponent.
+            if (m.winner && m.winner === this.mp.role) {
+                this._killOpponent();
+            } else {
+                this._killSelf();
+            }
         });
         mp.on('disconnected', () => {
             if (this.state === 'MP_FIGHT' && !this.mpResult) {
@@ -3806,10 +3812,18 @@ class Game {
     }
 
     async _hostRoomFlow() {
-        this.mpStatus = 'Generating code...';
+        this.mpStatus = 'Connecting to broker...';
         this.mpStatusColor = '#FFD700';
         this.mpLobbyMode = 'connecting';
+        // Verify PeerJS loaded
+        if (typeof Peer === 'undefined') {
+            this.mpStatus = 'Multiplayer library failed to load. Check your connection.';
+            this.mpStatusColor = '#FF6666';
+            this.mpLobbyMode = 'menu';
+            return;
+        }
         // Try a few random codes until one isn't taken
+        let lastErr = null;
         for (let attempt = 0; attempt < 5; attempt++) {
             const code = this._randomCode();
             this.mp = new MultiplayerClient();
@@ -3822,12 +3836,12 @@ class Game {
                 this.mpLobbyMode = 'host';
                 return;
             } catch (e) {
+                lastErr = e;
                 this.mp.leave();
                 this.mp = null;
-                // try a different code
             }
         }
-        this.mpStatus = 'Could not host. Try again.';
+        this.mpStatus = 'Could not host: ' + ((lastErr && lastErr.message) || 'unknown error');
         this.mpStatusColor = '#FF6666';
         this.mpLobbyMode = 'menu';
     }
@@ -3915,19 +3929,35 @@ class Game {
             }
         } else if (this.mpLobbyMode === 'join') {
             // Connect button
-            if (mx > CANVAS_WIDTH / 2 - 80 && mx < CANVAS_WIDTH / 2 + 80 &&
-                my > 480 && my < 524) {
+            if (mx > CANVAS_WIDTH / 2 - 100 && mx < CANVAS_WIDTH / 2 + 100 &&
+                my > 600 && my < 644) {
                 this._joinRoomFlow();
                 return;
             }
             // Cancel back to menu
-            if (mx > CANVAS_WIDTH / 2 - 80 && mx < CANVAS_WIDTH / 2 + 80 &&
-                my > 540 && my < 580) {
+            if (mx > CANVAS_WIDTH - 130 && mx < CANVAS_WIDTH - 20 &&
+                my > 600 && my < 644) {
                 this.mpLobbyMode = 'menu';
                 this.mpStatus = '';
                 return;
             }
-            // Code letter tiles (4 boxes) — clicking any focuses input (no-op needed; keyboard handles)
+            // On-screen keyboard tap
+            const tile = this._mpKeyboardHit(mx, my);
+            if (tile) {
+                if (tile.isBackspace) {
+                    this.mpCodeBuf = this.mpCodeBuf.slice(0, -1);
+                } else if (this.mpCodeBuf.length < 4) {
+                    this.mpCodeBuf += tile.ch;
+                    // Auto-connect when 4 chars are entered
+                    if (this.mpCodeBuf.length === 4) {
+                        // small delay so the user sees the last letter fill
+                        setTimeout(() => {
+                            if (this.mpLobbyMode === 'join') this._joinRoomFlow();
+                        }, 300);
+                    }
+                }
+                return;
+            }
         } else if (this.mpLobbyMode === 'host') {
             // Cancel host
             if (mx > CANVAS_WIDTH / 2 - 80 && mx < CANVAS_WIDTH / 2 + 80 &&
@@ -4027,14 +4057,14 @@ class Game {
 
         if (this.mpLobbyMode === 'join') {
             ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold 22px Arial';
-            ctx.fillText('Enter the host\'s 4-letter code', CANVAS_WIDTH / 2, 280);
+            ctx.font = 'bold 20px Arial';
+            ctx.fillText('Enter the host\'s 4-letter code', CANVAS_WIDTH / 2, 200);
 
-            // 4 input boxes
-            const boxSize = 60, boxGap = 12;
+            // 4 input boxes (slightly smaller / higher to make room for keyboard)
+            const boxSize = 56, boxGap = 10;
             const totalW = boxSize * 4 + boxGap * 3;
             const startX = (CANVAS_WIDTH - totalW) / 2;
-            const boxY = 320;
+            const boxY = 220;
             for (let i = 0; i < 4; i++) {
                 const bx = startX + i * (boxSize + boxGap);
                 const filled = i < this.mpCodeBuf.length;
@@ -4045,38 +4075,39 @@ class Game {
                 ctx.strokeRect(bx, boxY, boxSize, boxSize);
                 if (filled) {
                     ctx.fillStyle = '#FFFFFF';
-                    ctx.font = 'bold 42px monospace';
-                    ctx.fillText(this.mpCodeBuf[i], bx + boxSize / 2, boxY + 46);
+                    ctx.font = 'bold 38px monospace';
+                    ctx.fillText(this.mpCodeBuf[i], bx + boxSize / 2, boxY + 42);
                 }
             }
 
-            // Hint
-            ctx.fillStyle = '#888';
-            ctx.font = '12px Arial';
-            ctx.fillText('Type letters on your keyboard. Backspace to delete. Enter to connect.', CANVAS_WIDTH / 2, 410);
+            // ----- On-screen keyboard (works on mobile + desktop) -----
+            this._drawMPKeyboard(ctx, mx, my);
 
             // Connect button
-            const ccx = CANVAS_WIDTH / 2 - 80, ccy = 480;
-            const ccHover = mx > ccx && mx < ccx + 160 && my > ccy && my < ccy + 44;
+            const ccx = CANVAS_WIDTH / 2 - 100, ccy = 600;
+            const ccHover = mx > ccx && mx < ccx + 200 && my > ccy && my < ccy + 44;
             const ready = this.mpCodeBuf.length === 4;
             ctx.fillStyle = ready ? (ccHover ? '#5599FF' : '#4488FF') : '#445566';
-            ctx.fillRect(ccx, ccy, 160, 44);
+            ctx.fillRect(ccx, ccy, 200, 44);
             ctx.strokeStyle = '#FFF';
             ctx.lineWidth = 2;
-            ctx.strokeRect(ccx, ccy, 160, 44);
+            ctx.strokeRect(ccx, ccy, 200, 44);
             ctx.fillStyle = '#FFF';
             ctx.font = 'bold 18px Arial';
             ctx.fillText('CONNECT', CANVAS_WIDTH / 2, ccy + 28);
 
-            // Cancel button
-            const cancelY = 540;
-            const cancelHover = mx > CANVAS_WIDTH / 2 - 80 && mx < CANVAS_WIDTH / 2 + 80 &&
-                my > cancelY && my < cancelY + 36;
-            ctx.fillStyle = cancelHover ? '#3a3a5a' : '#2a2a4a';
-            ctx.fillRect(CANVAS_WIDTH / 2 - 80, cancelY, 160, 36);
+            // Cancel button (smaller, top-right of keyboard)
+            const cancelY = 600;
+            const cancelX = CANVAS_WIDTH - 130;
+            const cancelHover = mx > cancelX && mx < cancelX + 110 && my > cancelY && my < cancelY + 44;
+            ctx.fillStyle = cancelHover ? '#5a3a3a' : '#3a2a2a';
+            ctx.fillRect(cancelX, cancelY, 110, 44);
+            ctx.strokeStyle = '#FF6666';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(cancelX, cancelY, 110, 44);
             ctx.fillStyle = '#FFF';
             ctx.font = 'bold 14px Arial';
-            ctx.fillText('Cancel', CANVAS_WIDTH / 2, cancelY + 23);
+            ctx.fillText('Cancel', cancelX + 55, cancelY + 27);
         }
 
         if (this.mpLobbyMode === 'connecting') {
@@ -4093,12 +4124,74 @@ class Game {
         }
     }
 
+    // Layout for the on-screen alphabet keyboard
+    _mpKeyboardLayout() {
+        // 7-column grid; 25 letters minus skipped ambiguous chars (matches host code alphabet)
+        const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'.split('');
+        const cols = 7;
+        const tileW = 60, tileH = 50, gap = 6;
+        const rows = Math.ceil(chars.length / cols);
+        const totalW = cols * tileW + (cols - 1) * gap;
+        const startX = (CANVAS_WIDTH - totalW) / 2;
+        const startY = 320;
+
+        const tiles = [];
+        for (let i = 0; i < chars.length; i++) {
+            const col = i % cols, row = Math.floor(i / cols);
+            tiles.push({
+                ch: chars[i],
+                x: startX + col * (tileW + gap),
+                y: startY + row * (tileH + gap),
+                w: tileW, h: tileH
+            });
+        }
+        // Backspace at the bottom row
+        const lastRow = startY + rows * (tileH + gap);
+        tiles.push({
+            ch: '⌫', isBackspace: true,
+            x: CANVAS_WIDTH / 2 - 70, y: lastRow,
+            w: 140, h: tileH
+        });
+        return tiles;
+    }
+
+    _drawMPKeyboard(ctx, mx, my) {
+        const tiles = this._mpKeyboardLayout();
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (const t of tiles) {
+            const hover = mx >= t.x && mx <= t.x + t.w && my >= t.y && my <= t.y + t.h;
+            ctx.fillStyle = t.isBackspace
+                ? (hover ? '#7a3a3a' : '#3a2a2a')
+                : (hover ? '#445588' : '#222244');
+            ctx.fillRect(t.x, t.y, t.w, t.h);
+            ctx.strokeStyle = t.isBackspace ? '#FF8866' : '#5566AA';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(t.x, t.y, t.w, t.h);
+            ctx.fillStyle = '#FFF';
+            ctx.fillText(t.ch, t.x + t.w / 2, t.y + t.h / 2 + 1);
+        }
+        ctx.textBaseline = 'alphabetic';
+    }
+
+    _mpKeyboardHit(mx, my) {
+        const tiles = this._mpKeyboardLayout();
+        for (const t of tiles) {
+            if (mx >= t.x && mx <= t.x + t.w && my >= t.y && my <= t.y + t.h) return t;
+        }
+        return null;
+    }
+
     // ==================== 1V1 FIGHT ====================
 
     _startMPFight() {
         this.state = 'MP_FIGHT';
         this.music.play('boss');
         this.mpResult = null;
+        this._mpPendingResult = null;
+        this._mpPendingResultDelay = 0;
+        this._mpXPAwarded = false;
         this.mpProjectiles = [];
         this.mpParticles = [];
         this.mpOpponent = null;
@@ -4129,30 +4222,66 @@ class Game {
         // Build a fake "entities" array used by the player's weapon for hit detection.
         // Slot 0 is the player; slot 1 is a stub representing the opponent.
         this._mpOppStub = {
-            x: 0, y: 0, radius: 12, alive: true, health: 100, maxHealth: 100,
+            x: 0, y: 0, vx: 0, vy: 0, radius: 12, alive: true, health: 100, maxHealth: 100,
+            facing: 0, walkTimer: 0, attackAnim: 0, moveFacing: 0,
+            deathTimer: 0, deathMaxTimer: 1.8, fallDir: 1,
             isPlayer: false, team: TEAMS.RED, isMPOpponent: true,
             takeDamage: (amount, attacker) => {
-                // We hit the opponent locally — tell them about it
+                if (!this._mpOppStub.alive) return;
                 this.mp.send('damage', { amount });
                 spawnHitParticles(this.mpParticles, this._mpOppStub.x, this._mpOppStub.y, '#FFAA44', 5);
                 this.mpParticles.push(new DamageNumber(this._mpOppStub.x, this._mpOppStub.y - 10, amount, '#FFAA44'));
                 this._mpOppStub.health = Math.max(0, this._mpOppStub.health - amount);
+                if (this._mpOppStub.health <= 0) this._killOpponent();
             },
             update: () => {}
         };
+        this._mpPlayerDeathTimer = 0;
         this.mpEntities = [this.player, this._mpOppStub];
 
         this._mpCamera = this._makeRoomCamera(MP_ARENA_WIDTH, MP_ARENA_HEIGHT);
+    }
+
+    // Mark the opponent as dying (start death animation locally) and queue the result.
+    _killOpponent() {
+        if (!this._mpOppStub.alive || this._mpPendingResult) return;
+        this._mpOppStub.alive = false;
+        this._mpOppStub.deathTimer = 1.8;
+        this._mpOppStub.deathMaxTimer = 1.8;
+        this._mpOppStub.fallDir = (this._mpOppStub.x >= this.player.x) ? 1 : -1;
+        this._mpPendingResult = 'win';
+        this._mpPendingResultDelay = 1.5; // wait for animation before showing screen
+        // Tell opponent we won (their stick should die)
+        if (this.mp) this.mp.send('win', { winner: this.mp.role });
+        if (this.progression && !this._mpXPAwarded) {
+            this._mpXPAwarded = true;
+            this.progression.addXP(MP_WIN_XP);
+            this.progression.save();
+        }
+    }
+
+    _killSelf() {
+        if (!this.player.alive || this._mpPendingResult) return;
+        this.player.alive = false;
+        this.player.deathTimer = 1.8;
+        this.player.deathMaxTimer = 1.8;
+        this.player.fallDir = this.mpOpponent ? ((this.player.x >= this.mpOpponent.x) ? 1 : -1) : 1;
+        this._mpPendingResult = 'lose';
+        this._mpPendingResultDelay = 1.5;
     }
 
     _endMPFight(result, customMsg) {
         if (this.mpResult) return;
         this.mpResult = result;
         this.mpResultMsg = customMsg;
-        if (result === 'win') {
-            this.progression.addXP(MP_WIN_XP);
-            this.progression.save();
-            this.mp.send('win', { winner: this.mp.role });
+        // If we're winning by forfeit (opponent left etc.), award XP if we haven't already.
+        if (result === 'win' && !this._mpXPAwarded) {
+            this._mpXPAwarded = true;
+            if (this.progression) {
+                this.progression.addXP(MP_WIN_XP);
+                this.progression.save();
+            }
+            if (this.mp && this.mp.connected) this.mp.send('win', { winner: this.mp.role });
         }
         this.state = 'MP_RESULT';
     }
@@ -4162,6 +4291,20 @@ class Game {
             this._endMPFight('win', 'Opponent left');
             return;
         }
+
+        // If a death has been triggered, tick down its animation, then show result.
+        if (this._mpPendingResult) {
+            if (this._mpOppStub.deathTimer > 0) this._mpOppStub.deathTimer -= dt;
+            if (this.player.deathTimer > 0) this.player.deathTimer -= dt;
+            for (const p of this.mpParticles) p.update(dt);
+            this.mpParticles = this.mpParticles.filter(p => p.alive || (p.life !== undefined && p.life > 0));
+            this._mpPendingResultDelay -= dt;
+            if (this._mpPendingResultDelay <= 0) {
+                this._endMPFight(this._mpPendingResult);
+            }
+            return;
+        }
+
         const cam = this._mpCamera;
         const input = this.input;
 
@@ -4260,9 +4403,7 @@ class Game {
             this._endMPFight('lose', 'You fled');
         }
 
-        if (!this.player.alive) {
-            this._endMPFight('lose');
-        }
+        // (Death handled via _killSelf / _killOpponent — see top of update.)
     }
 
     renderMPFight() {
@@ -4307,24 +4448,36 @@ class Game {
         ctx.closePath();
         ctx.stroke();
 
-        // Opponent stickman (drawn through normal pipeline using a stub entity)
-        if (this.mpOpponent && this._mpOppStub.alive) {
+        // Opponent stickman (alive: regular draw; dying: death animation)
+        if (this.mpOpponent) {
             const opp = {
-                x: this.mpOpponent.x, y: this.mpOpponent.y,
+                x: this._mpOppStub.x ?? this.mpOpponent.x,
+                y: this._mpOppStub.y ?? this.mpOpponent.y,
                 facing: this.mpOpponent.facing || 0,
                 vx: 0, vy: 0,
                 walkTimer: this.gameTime, moveFacing: this.mpOpponent.facing,
                 attackAnim: this.mpOpponent.attack ? 0.5 : 0,
                 health: this.mpOpponent.hp ?? 100, maxHealth: 100,
-                alive: true, isPlayer: false, team: TEAMS.RED,
+                alive: this._mpOppStub.alive, isPlayer: false, team: TEAMS.RED,
                 emote: this.mpOpponent.emote, emoteTimer: this.mpOpponent.emoteTimer,
+                deathTimer: this._mpOppStub.deathTimer,
+                deathMaxTimer: this._mpOppStub.deathMaxTimer,
+                fallDir: this._mpOppStub.fallDir,
                 weapon: { key: 'WOODEN_SWORD', color: WEAPON_DEFS.WOODEN_SWORD.color, type: 'melee' }
             };
-            drawStickman(ctx, opp, cam);
+            if (!opp.alive && opp.deathTimer > 0) {
+                drawStickmanDeath(ctx, opp, cam);
+            } else if (opp.alive) {
+                drawStickman(ctx, opp, cam);
+            }
         }
 
-        // Player
-        drawStickman(ctx, this.player, cam);
+        // Player (alive: regular; dying: death animation)
+        if (this.player.alive) {
+            drawStickman(ctx, this.player, cam);
+        } else if (this.player.deathTimer > 0) {
+            drawStickmanDeath(ctx, this.player, cam);
+        }
 
         // Projectiles & particles
         for (const proj of this.mpProjectiles) proj.draw(ctx, cam);
