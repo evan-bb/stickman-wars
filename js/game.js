@@ -11,6 +11,10 @@ class Game {
         this.lastTime = 0;
         this.gameTime = 0;
 
+        // Emote wheel state
+        this.emoteWheelOpen = false;
+        this.emoteWheelHover = -1;
+
         this.input = new InputHandler(canvas);
         this.touch = new TouchControls(canvas, this.input);
         this.camera = new Camera();
@@ -1146,6 +1150,8 @@ class Game {
         this.gameTime += dt;
         this.hud.update(dt);
         this.progression.updateTimers(dt);
+        this.player.updateEmote(dt);
+        this._updateEmoteWheel();
 
         // Track kills this frame for streak detection
         const prevKills = this.player.kills;
@@ -1732,8 +1738,17 @@ class Game {
         // Storm overlay
         this.renderStorm(ctx);
 
+        // Emote bubble above player (drawn under HUD so it doesn't cover bars)
+        this._drawPlayerEmote(ctx, this.camera);
+
         // HUD
         this.hud.draw(ctx, this.player, this.blueAlive, this.redAlive, this.player.interactPrompt, this.input);
+
+        // Emote button (top-right under minimap)
+        this._drawEmoteButton(ctx);
+
+        // Emote wheel (full overlay, on top of everything)
+        this._drawEmoteWheel(ctx);
 
         // Minimap
         this.minimap.draw(ctx, this.entities, this.player, this.camera, this.storm);
@@ -3051,6 +3066,228 @@ class Game {
             ctx.fillText(this.hud.notification, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 100);
             ctx.globalAlpha = 1;
         }
+    }
+
+    // ---------- Emote wheel ----------
+    _updateEmoteWheel() {
+        // Open with B key (toggle)
+        if (this.input.isKeyDown('b')) {
+            this.input.keys['b'] = false;
+            this.emoteWheelOpen = !this.emoteWheelOpen;
+        }
+        if (!this.emoteWheelOpen) {
+            this.emoteWheelHover = -1;
+            return;
+        }
+
+        // Hit-test the radial wheel
+        const cx = CANVAS_WIDTH / 2, cy = CANVAS_HEIGHT / 2;
+        const innerR = 50, outerR = 130;
+        const dx = this.input.mouseX - cx;
+        const dy = this.input.mouseY - cy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist >= innerR && dist <= outerR) {
+            // Sectors: angle 0 = right, sweep clockwise
+            let angle = Math.atan2(dy, dx);
+            if (angle < 0) angle += Math.PI * 2;
+            // Offset so first emote is at top
+            angle = (angle + Math.PI / 2 + Math.PI / EMOTES.length) % (Math.PI * 2);
+            this.emoteWheelHover = Math.floor(angle / (Math.PI * 2 / EMOTES.length));
+        } else {
+            this.emoteWheelHover = -1;
+        }
+
+        // Click on a sector → play emote and close
+        if (this.input.consumeClick() && this.emoteWheelHover >= 0) {
+            this.player.playEmote(EMOTES[this.emoteWheelHover]);
+            this.emoteWheelOpen = false;
+        }
+
+        // ESC closes wheel
+        if (this.input.isKeyDown('escape')) {
+            this.input.keys['escape'] = false;
+            this.emoteWheelOpen = false;
+        }
+    }
+
+    _drawEmoteWheel(ctx) {
+        if (!this.emoteWheelOpen) return;
+        const cx = CANVAS_WIDTH / 2, cy = CANVAS_HEIGHT / 2;
+        const innerR = 50, outerR = 130;
+
+        // Dim background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Wheel ring
+        ctx.fillStyle = 'rgba(20, 20, 40, 0.9)';
+        ctx.beginPath();
+        ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+        ctx.arc(cx, cy, innerR, 0, Math.PI * 2, true);
+        ctx.fill('evenodd');
+        ctx.strokeStyle = '#4488FF';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy, innerR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Sector dividers + emotes
+        const n = EMOTES.length;
+        const sectorAngle = Math.PI * 2 / n;
+        for (let i = 0; i < n; i++) {
+            // Sector angle (i=0 at top, going clockwise)
+            const startAngle = -Math.PI / 2 + i * sectorAngle - sectorAngle / 2;
+            const endAngle = startAngle + sectorAngle;
+            const midAngle = (startAngle + endAngle) / 2;
+
+            // Highlight hovered sector
+            if (this.emoteWheelHover === i) {
+                ctx.fillStyle = 'rgba(68, 136, 255, 0.35)';
+                ctx.beginPath();
+                ctx.arc(cx, cy, outerR, startAngle, endAngle);
+                ctx.arc(cx, cy, innerR, endAngle, startAngle, true);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Divider line
+            ctx.strokeStyle = 'rgba(200, 200, 220, 0.3)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(cx + Math.cos(startAngle) * innerR, cy + Math.sin(startAngle) * innerR);
+            ctx.lineTo(cx + Math.cos(startAngle) * outerR, cy + Math.sin(startAngle) * outerR);
+            ctx.stroke();
+
+            // Emote icon
+            const ex = cx + Math.cos(midAngle) * (innerR + outerR) / 2;
+            const ey = cy + Math.sin(midAngle) * (innerR + outerR) / 2;
+            const e = EMOTES[i];
+            ctx.fillStyle = e.color;
+            ctx.font = 'bold 30px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(e.emoji, ex, ey - 10);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 11px Arial';
+            ctx.fillText(e.label, ex, ey + 18);
+        }
+
+        // Center hint
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('EMOTES', cx, cy - 6);
+        ctx.fillStyle = '#AAA';
+        ctx.font = '10px Arial';
+        ctx.fillText('B / ESC to close', cx, cy + 8);
+    }
+
+    // Floating emote button — clickable on mobile or desktop
+    _drawEmoteButton(ctx) {
+        const bw = 44, bh = 44;
+        const bx = CANVAS_WIDTH - bw - 12;
+        const by = 200;
+        const mx = this.input.mouseX, my = this.input.mouseY;
+        const hover = mx > bx && mx < bx + bw && my > by && my < by + bh;
+
+        ctx.fillStyle = this.emoteWheelOpen ? '#4488FF' : (hover ? '#3a3a5a' : 'rgba(20, 20, 40, 0.7)');
+        ctx.beginPath();
+        ctx.arc(bx + bw / 2, by + bh / 2, bw / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#88AAFF';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('😀', bx + bw / 2, by + bh / 2);
+
+        // 'B' hint badge (desktop)
+        if (!this.touch.active) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(bx + bw - 12, by - 4, 16, 14);
+            ctx.fillStyle = '#FFD700';
+            ctx.font = 'bold 9px Arial';
+            ctx.fillText('B', bx + bw - 4, by + 3);
+        }
+
+        // Open the wheel when clicked. Don't consume — wheel logic handles further clicks.
+        if (hover && this.input.mouseClicked && !this.emoteWheelOpen) {
+            this.input.mouseClicked = false;
+            this.emoteWheelOpen = true;
+        }
+    }
+
+    // Draw emote bubble above player (called during render)
+    _drawPlayerEmote(ctx, camera) {
+        const p = this.player;
+        if (!p || !p.alive || !p.emote) return;
+        const t = EMOTE_DURATION - p.emoteTimer; // elapsed time
+        const lifePct = p.emoteTimer / EMOTE_DURATION; // 1 → 0
+        const screen = camera.worldToScreen(p.x, p.y);
+        let bx = screen.x;
+        let by = screen.y - 56;
+
+        // Animation modifiers
+        let scale = 1, rotate = 0, dripY = 0;
+        switch (p.emote.anim) {
+            case 'bounce': by -= Math.abs(Math.sin(t * 6)) * 6; break;
+            case 'shake': bx += Math.sin(t * 30) * 3; break;
+            case 'pop': scale = 1 + Math.max(0, Math.sin(t * 10)) * 0.15; break;
+            case 'pulse': scale = 1 + Math.sin(t * 5) * 0.15; break;
+            case 'drip': dripY = (Math.sin(t * 4) * 4) + 2; break;
+            case 'wiggle': rotate = Math.sin(t * 8) * 0.3; break;
+        }
+
+        // Fade in/out
+        const fadeIn = Math.min(1, t * 4);
+        const fadeOut = Math.min(1, lifePct * 2.5);
+        const alpha = Math.min(fadeIn, fadeOut);
+
+        // Bubble background
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(bx, by);
+        ctx.rotate(rotate);
+        ctx.scale(scale, scale);
+
+        const bubW = 56, bubH = 44;
+        // Tail
+        ctx.fillStyle = 'rgba(20, 20, 40, 0.92)';
+        ctx.beginPath();
+        ctx.moveTo(-6, bubH / 2 - 1);
+        ctx.lineTo(0, bubH / 2 + 10);
+        ctx.lineTo(6, bubH / 2 - 1);
+        ctx.closePath();
+        ctx.fill();
+        // Rounded rect
+        ctx.beginPath();
+        const r = 10;
+        ctx.moveTo(-bubW / 2 + r, -bubH / 2);
+        ctx.arcTo(bubW / 2, -bubH / 2, bubW / 2, bubH / 2, r);
+        ctx.arcTo(bubW / 2, bubH / 2, -bubW / 2, bubH / 2, r);
+        ctx.arcTo(-bubW / 2, bubH / 2, -bubW / 2, -bubH / 2, r);
+        ctx.arcTo(-bubW / 2, -bubH / 2, bubW / 2, -bubH / 2, r);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = p.emote.color;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Emote icon
+        ctx.fillStyle = p.emote.color;
+        ctx.font = 'bold 26px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(p.emote.emoji, 0, dripY);
+
+        ctx.restore();
     }
 
     // Per-frame boss pickup handling: update bob, check pickup collision, auto-exit on collect.

@@ -239,3 +239,16 @@ const LEVEL_UNLOCKS = [
     { level: 18, type: 'trail', key: 'rainbow', name: 'Rainbow Trail' },
     { level: 20, type: 'hat', key: 'halo', name: 'Halo' },
 ];
+
+// Emotes — quick reactions playable by the player. Six in a wheel.
+// `anim` describes what visual loop to play above the stickman.
+const EMOTES = [
+    { key: 'wave',     label: 'Wave',     emoji: '👋', color: '#FFD700', anim: 'bounce' },
+    { key: 'laugh',    label: 'Laugh',    emoji: '😂', color: '#FFD700', anim: 'shake'  },
+    { key: 'gg',       label: 'GG',       emoji: 'GG', color: '#44FF66', anim: 'pop'    },
+    { key: 'heart',    label: 'Love',     emoji: '❤',  color: '#FF66AA', anim: 'pulse'  },
+    { key: 'cry',      label: 'Cry',      emoji: '😢', color: '#66CCFF', anim: 'drip'   },
+    { key: 'dance',    label: 'Dance',    emoji: '🕺', color: '#FF66CC', anim: 'wiggle' },
+];
+const EMOTE_DURATION = 2.4;       // seconds the emote stays up
+const EMOTE_COOLDOWN = 0.8;       // anti-spam cooldown after one ends

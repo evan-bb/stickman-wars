@@ -13,6 +13,11 @@ class Player extends Entity {
         this.inventory = []; // array of Weapon objects
         this.activeSlot = 0; // index into inventory
 
+        // Emote
+        this.emote = null;        // current EMOTES entry, or null
+        this.emoteTimer = 0;      // counts down while emote is playing
+        this.emoteCooldown = 0;
+
         // Sprint
         this.stamina = 100;
         this.maxStamina = 100;
@@ -130,6 +135,21 @@ class Player extends Entity {
         // Attack on click or space
         if (this.weapon && (input.mouseDown || input.isKeyDown(' '))) {
             this.weapon.attack(this, entities, projectiles, particles);
+        }
+    }
+
+    playEmote(emote) {
+        if (this.emoteCooldown > 0) return;
+        this.emote = emote;
+        this.emoteTimer = EMOTE_DURATION;
+        this.emoteCooldown = EMOTE_DURATION + EMOTE_COOLDOWN;
+    }
+
+    updateEmote(dt) {
+        if (this.emoteCooldown > 0) this.emoteCooldown -= dt;
+        if (this.emoteTimer > 0) {
+            this.emoteTimer -= dt;
+            if (this.emoteTimer <= 0) this.emote = null;
         }
     }
 
