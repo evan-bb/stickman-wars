@@ -9,6 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Stamp version with commit SHA
+        run: |
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          sed -i "s/window.APP_VERSION = \"dev\";/window.APP_VERSION = \"${SHORT_SHA}\";/" js/version.js
+          cat js/version.js
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}

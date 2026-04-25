@@ -290,6 +290,12 @@ class Game {
         ctx.fillStyle = '#FFFFFF';
         ctx.font = 'bold 12px Arial';
         ctx.fillText(Math.floor(progress * 100) + '%', CANVAS_WIDTH / 2, pbY + pbH - 4);
+
+        // Version tag (bottom-right)
+        ctx.textAlign = 'right';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.font = '12px Arial';
+        ctx.fillText('v' + (window.APP_VERSION || 'dev'), CANVAS_WIDTH - 12, CANVAS_HEIGHT - 12);
     }
 
     _drawLoadingStickman(ctx, x, y, color, swordAngle, thrustExtend, facingLeft) {
@@ -562,6 +568,12 @@ class Game {
         } else {
             ctx.fillText('WASD to move | Mouse to aim | Click/Space to attack | E to interact', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 40);
         }
+
+        // Version tag (bottom-right)
+        ctx.textAlign = 'right';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.font = '12px Arial';
+        ctx.fillText('v' + (window.APP_VERSION || 'dev'), CANVAS_WIDTH - 12, CANVAS_HEIGHT - 12);
     }
 
     // ==================== COSMETICS ====================
