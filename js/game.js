@@ -1784,8 +1784,8 @@ class Game {
                 this.bossDefeated = true;
                 this.player.sticks += 50;
                 this.player.addXP(XP_PER_BOSS);
-                this.hud.notify('Luca defeated! Pick up the Web Sword!', '#CC44CC', 3);
-                this.bossPickup = new WeaponPickup(CAVE_WIDTH / 2, CAVE_HEIGHT / 2, 'WEB_SWORD');
+                this.hud.notify('Luca defeated! Pick up the Web Bow!', '#CC44CC', 3);
+                this.bossPickup = new WeaponPickup(CAVE_WIDTH / 2, CAVE_HEIGHT / 2, 'WEB_BOW');
             }
             this._handleBossPickup('bossPickup', () => this.exitCave());
         }
@@ -2540,8 +2540,8 @@ class Game {
                 this.polarDefeated = true;
                 this.player.sticks += 50;
                 this.player.addXP(XP_PER_BOSS);
-                this.hud.notify('Tommy defeated! Pick up the Ice Sword!', '#66DDFF', 3);
-                this.polarPickup = new WeaponPickup(ICE_CASTLE_WIDTH / 2, ICE_CASTLE_HEIGHT / 2, 'ICE_SWORD');
+                this.hud.notify('Tommy defeated! Pick up the Ice Bow!', '#66DDFF', 3);
+                this.polarPickup = new WeaponPickup(ICE_CASTLE_WIDTH / 2, ICE_CASTLE_HEIGHT / 2, 'ICE_BOW');
             }
             this._handleBossPickup('polarPickup', () => this.exitIceCastle());
         }

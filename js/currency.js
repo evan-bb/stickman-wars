@@ -123,31 +123,74 @@ class WeaponPickup {
         // Rotating weapon icon
         ctx.rotate(this.spinTimer * 0.4);
 
-        // Sword shape
-        ctx.fillStyle = color;
-        ctx.strokeStyle = '#222';
-        ctx.lineWidth = 1.5;
-        // Blade
-        ctx.beginPath();
-        ctx.moveTo(0, -22);
-        ctx.lineTo(4, -6);
-        ctx.lineTo(3, 6);
-        ctx.lineTo(-3, 6);
-        ctx.lineTo(-4, -6);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        // Cross-guard
-        ctx.fillStyle = '#333';
-        ctx.fillRect(-9, 6, 18, 3);
-        // Grip
-        ctx.fillStyle = '#5A3010';
-        ctx.fillRect(-2, 9, 4, 8);
-        // Pommel
-        ctx.fillStyle = '#B8860B';
-        ctx.beginPath();
-        ctx.arc(0, 18, 3, 0, Math.PI * 2);
-        ctx.fill();
+        if (this.def.type === 'ranged') {
+            // Bow shape (with nocked arrow)
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            // Bow arc
+            ctx.beginPath();
+            ctx.arc(0, 0, 18, -Math.PI * 0.6, Math.PI * 0.6, false);
+            ctx.stroke();
+            // Bowstring
+            ctx.strokeStyle = '#EEE';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(0 + 18 * Math.cos(-Math.PI * 0.6), 0 + 18 * Math.sin(-Math.PI * 0.6));
+            ctx.lineTo(-4, 0); // pulled-back string
+            ctx.lineTo(0 + 18 * Math.cos(Math.PI * 0.6), 0 + 18 * Math.sin(Math.PI * 0.6));
+            ctx.stroke();
+            // Arrow shaft
+            ctx.strokeStyle = '#C9A86A';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-10, 0);
+            ctx.lineTo(22, 0);
+            ctx.stroke();
+            // Arrowhead
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(28, 0);
+            ctx.lineTo(20, -4);
+            ctx.lineTo(20, 4);
+            ctx.closePath();
+            ctx.fill();
+            // Fletching
+            ctx.fillStyle = '#FFF';
+            ctx.beginPath();
+            ctx.moveTo(-10, 0);
+            ctx.lineTo(-15, -3);
+            ctx.lineTo(-13, 0);
+            ctx.lineTo(-15, 3);
+            ctx.closePath();
+            ctx.fill();
+        } else {
+            // Sword shape
+            ctx.fillStyle = color;
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 1.5;
+            // Blade
+            ctx.beginPath();
+            ctx.moveTo(0, -22);
+            ctx.lineTo(4, -6);
+            ctx.lineTo(3, 6);
+            ctx.lineTo(-3, 6);
+            ctx.lineTo(-4, -6);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            // Cross-guard
+            ctx.fillStyle = '#333';
+            ctx.fillRect(-9, 6, 18, 3);
+            // Grip
+            ctx.fillStyle = '#5A3010';
+            ctx.fillRect(-2, 9, 4, 8);
+            // Pommel
+            ctx.fillStyle = '#B8860B';
+            ctx.beginPath();
+            ctx.arc(0, 18, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
 
         // Sparkle star
         if (Math.sin(this.spinTimer * 3) > 0.5) {

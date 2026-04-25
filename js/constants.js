@@ -79,9 +79,9 @@ const WEAPON_DEFS = {
     MAGIC_STAFF: { name: 'Magic Staff', damage: 46, range: 350, cooldown: 550, type: 'ranged', projectileSpeed: 300, color: '#9932CC', pierce: true },
     DIAMOND_SWORD: { name: 'Diamond Sword', damage: 56, range: 50, cooldown: 380, type: 'melee', color: '#00CED1' },
     // Boss drops — all top-tier
-    WEB_SWORD: { name: 'Web Sword', damage: 55, range: 52, cooldown: 400, type: 'melee', color: '#CC44CC' },
+    WEB_BOW: { name: 'Web Bow', damage: 60, range: 340, cooldown: 480, type: 'ranged', projectileSpeed: 420, color: '#CC44CC', pierce: true },
     GHOST_SWORD: { name: 'Ghost Sword', damage: 58, range: 55, cooldown: 420, type: 'melee', color: '#88CCFF' },
-    ICE_SWORD: { name: 'Ice Sword', damage: 60, range: 50, cooldown: 400, type: 'melee', color: '#66DDFF' },
+    ICE_BOW: { name: 'Ice Bow', damage: 65, range: 340, cooldown: 480, type: 'ranged', projectileSpeed: 420, color: '#66DDFF', pierce: true },
     LAVA_SWORD: { name: 'Lava Sword', damage: 65, range: 50, cooldown: 420, type: 'melee', color: '#FF4400', burn: true },
     SAND_SWORD: { name: 'Sand Sword', damage: 54, range: 52, cooldown: 400, type: 'melee', color: '#E8C070' }
 };
