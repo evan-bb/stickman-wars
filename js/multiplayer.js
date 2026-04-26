@@ -2,16 +2,18 @@
 // Multiplayer Client (WebRTC via PeerJS)
 // ============================================
 //
-// 1v1 over the public PeerJS broker. No backend, peer-to-peer.
+// 1v1 over the public PeerJS broker. No backend for the data channel
+// itself — peers connect directly. A separate matchmaking lobby
+// (js/lobby.js) brokers peer IDs through Firebase RTDB so users don't
+// have to share codes.
 //
-// Codes are 4 letters (e.g. "ABCD"). They get prefixed with a fixed
-// namespace before being used as a peer ID so we don't collide with
-// other apps using the public broker.
+// Peer IDs are random and prefixed with `swars-` so we don't collide
+// with other apps on the public broker.
 //
 // Flow:
-//   - First player: hostRoom('ABCD') registers peer ID swars-ABCD,
-//     waits for an incoming connection.
-//   - Second player: joinRoom('ABCD') connects to swars-ABCD.
+//   - Host: hostPeer() registers a random peer ID, waits for incoming.
+//     Returns the registered ID so the lobby can publish it.
+//   - Guest: connectToPeer(id) opens a data channel to that ID.
 //   - Both ends exchange JSON messages: { type, ...payload }
 //
 // Message types:
@@ -23,12 +25,20 @@
 
 const MP_PEER_PREFIX = 'swars-';
 
+function _randomPeerSuffix() {
+    // 12 chars from a URL-safe alphabet; ~ 71 bits of entropy.
+    const a = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let s = '';
+    for (let i = 0; i < 12; i++) s += a[Math.floor(Math.random() * a.length)];
+    return s;
+}
+
 class MultiplayerClient {
     constructor() {
         this.peer = null;
         this.conn = null;
         this.role = null;        // 'host' | 'guest'
-        this.code = null;
+        this.peerId = null;      // our own peer ID on the broker
         this.connected = false;
         this.opponentReady = false;
 
@@ -52,22 +62,24 @@ class MultiplayerClient {
         }
     }
 
-    // Try to host a room. Resolves when the broker registers our ID.
-    // Rejects if the ID is already taken (someone is hosting that code).
-    hostRoom(code) {
+    // Register a random peer ID on the broker as the host. Resolves with
+    // the registered peerId; the matchmaking lobby publishes that so a
+    // guest can connect to us.
+    hostPeer() {
         this._ensurePeer();
         this.role = 'host';
-        this.code = code;
-        const id = MP_PEER_PREFIX + code.toUpperCase();
+        const id = MP_PEER_PREFIX + _randomPeerSuffix();
 
         return new Promise((resolve, reject) => {
             const peer = new Peer(id);
             this.peer = peer;
-            peer.on('open', () => resolve(true));
+            peer.on('open', (registeredId) => {
+                this.peerId = registeredId;
+                resolve(registeredId);
+            });
             peer.on('error', (err) => {
-                // 'unavailable-id' means somebody already has this peer ID
                 if (err && err.type === 'unavailable-id') {
-                    reject(new Error('Code in use'));
+                    reject(new Error('Peer ID collision (rare) — retry'));
                 } else {
                     this._emit('error', err);
                 }
@@ -78,31 +90,28 @@ class MultiplayerClient {
         });
     }
 
-    // Join an existing host. Resolves once the data channel opens.
-    joinRoom(code) {
+    // Connect out to an existing host peer ID. Resolves once the data channel opens.
+    connectToPeer(targetId) {
         this._ensurePeer();
         this.role = 'guest';
-        this.code = code;
-        const targetId = MP_PEER_PREFIX + code.toUpperCase();
 
         return new Promise((resolve, reject) => {
-            // Use a random ID for the guest so we don't conflict
-            const peer = new Peer();
+            const peer = new Peer(); // random guest ID
             this.peer = peer;
-            peer.on('open', () => {
+            peer.on('open', (id) => {
+                this.peerId = id;
                 const conn = peer.connect(targetId, { reliable: true });
                 this._bindConn(conn);
                 let opened = false;
                 conn.on('open', () => { opened = true; resolve(true); });
                 conn.on('error', (err) => reject(err));
-                // If we never see 'open', assume host doesn't exist
                 setTimeout(() => {
-                    if (!opened) reject(new Error('Could not find that room'));
-                }, 6000);
+                    if (!opened) reject(new Error('Host did not respond'));
+                }, 8000);
             });
             peer.on('error', (err) => {
                 if (err && (err.type === 'peer-unavailable' || err.type === 'network')) {
-                    reject(new Error('Could not find that room'));
+                    reject(new Error('Host went away before we could connect'));
                 } else {
                     this._emit('error', err);
                 }
@@ -149,7 +158,7 @@ class MultiplayerClient {
         this.connected = false;
         this.opponentReady = false;
         this.role = null;
-        this.code = null;
+        this.peerId = null;
     }
 }
 

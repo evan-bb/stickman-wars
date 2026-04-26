@@ -1,0 +1,26 @@
+{
+  "name": "Stickman Wars",
+  "short_name": "Stickman Wars",
+  "description": "Top-down 2D battle royale stickman game by ECJ Games.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0a0a1e",
+  "theme_color": "#1a1a2e",
+  "categories": ["games", "action"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

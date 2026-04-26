@@ -17,10 +17,11 @@ class Game {
 
         // Multiplayer state
         this.mp = null;                   // MultiplayerClient instance during a 1v1
-        this.mpCodeBuf = '';              // typed code on the lobby screen
+        this.lobby = null;                // LobbyClient (Firebase matchmaking)
         this.mpStatus = '';               // status text for lobby/waiting
         this.mpStatusColor = '#FFFFFF';
-        this.mpLobbyMode = 'menu';        // 'menu' | 'host' | 'join' | 'connecting'
+        this.mpLobbyMode = 'searching';   // 'searching' | 'failed'
+        this.mpSearchStart = 0;
         this.mpOpponent = null;           // remote player snapshot
         this.mpOpponentTarget = null;     // interpolation target
         this.mpSendTimer = 0;
@@ -290,6 +291,12 @@ class Game {
         ctx.fillStyle = '#FFFFFF';
         ctx.font = 'bold 12px Arial';
         ctx.fillText(Math.floor(progress * 100) + '%', CANVAS_WIDTH / 2, pbY + pbH - 4);
+
+        // Version tag (bottom-right)
+        ctx.textAlign = 'right';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.font = '12px Arial';
+        ctx.fillText('v' + (window.APP_VERSION || 'dev'), CANVAS_WIDTH - 12, CANVAS_HEIGHT - 12);
     }
 
     _drawLoadingStickman(ctx, x, y, color, swordAngle, thrustExtend, facingLeft) {
@@ -562,6 +569,12 @@ class Game {
         } else {
             ctx.fillText('WASD to move | Mouse to aim | Click/Space to attack | E to interact', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 40);
         }
+
+        // Version tag (bottom-right)
+        ctx.textAlign = 'right';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.font = '12px Arial';
+        ctx.fillText('v' + (window.APP_VERSION || 'dev'), CANVAS_WIDTH - 12, CANVAS_HEIGHT - 12);
     }
 
     // ==================== COSMETICS ====================
@@ -3739,19 +3752,14 @@ class Game {
 
     openMPLobby() {
         this.state = 'MP_LOBBY';
-        this.mpCodeBuf = '';
-        this.mpStatus = '';
-        this.mpStatusColor = '#FFFFFF';
-        this.mpLobbyMode = 'menu';
+        this.mpStatus = 'Searching for an opponent...';
+        this.mpStatusColor = '#FFD700';
+        this.mpLobbyMode = 'searching';
+        this.mpSearchStart = performance.now();
         if (this.mp) this.mp.leave();
+        if (this.lobby) this.lobby.leaveLobby().catch(() => {});
         this.mp = null;
-    }
-
-    _randomCode() {
-        const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // skip ambiguous chars
-        let s = '';
-        for (let i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
-        return s;
+        this._findMatchFlow();
     }
 
     _bindMPHandlers() {
@@ -3786,6 +3794,17 @@ class Game {
                 this.mpOpponent.emoteTimer = EMOTE_DURATION;
             }
         });
+        mp.on('msg:drop', (m) => {
+            // Host announces a new center weapon drop. Guest mirrors it.
+            if (this.mp && this.mp.role === 'host') return;
+            if (!m || !m.id || !m.weaponKey) return;
+            this.mpDrops.push({ id: m.id, weaponKey: m.weaponKey, x: m.x, y: m.y, spawnT: 0 });
+        });
+        mp.on('msg:pickup', (m) => {
+            // The other side claimed a drop — remove it from our list (no-op if already gone).
+            if (!m || !m.id) return;
+            this.mpDrops = this.mpDrops.filter(d => d.id !== m.id);
+        });
         mp.on('msg:win', (m) => {
             // Opponent reports they died (or that we lost). If we already saw it locally,
             // do nothing. Otherwise, treat it as authoritative.
@@ -3803,7 +3822,7 @@ class Game {
             } else if (this.state === 'MP_LOBBY') {
                 this.mpStatus = 'Connection lost';
                 this.mpStatusColor = '#FF6666';
-                this.mpLobbyMode = 'menu';
+                this.mpLobbyMode = 'failed';
             }
         });
         mp.on('error', (err) => {
@@ -3811,91 +3830,74 @@ class Game {
         });
     }
 
-    async _hostRoomFlow() {
-        this.mpStatus = 'Connecting to broker...';
-        this.mpStatusColor = '#FFD700';
-        this.mpLobbyMode = 'connecting';
-        // Verify PeerJS loaded
+    async _findMatchFlow() {
         if (typeof Peer === 'undefined') {
             this.mpStatus = 'Multiplayer library failed to load. Check your connection.';
             this.mpStatusColor = '#FF6666';
-            this.mpLobbyMode = 'menu';
+            this.mpLobbyMode = 'failed';
             return;
         }
-        // Try a few random codes until one isn't taken
-        let lastErr = null;
-        for (let attempt = 0; attempt < 5; attempt++) {
-            const code = this._randomCode();
-            this.mp = new MultiplayerClient();
-            this._bindMPHandlers();
-            try {
-                await this.mp.hostRoom(code);
-                this.mpCodeBuf = code;
-                this.mpStatus = 'Share code: ' + code;
-                this.mpStatusColor = '#44FF66';
-                this.mpLobbyMode = 'host';
-                return;
-            } catch (e) {
-                lastErr = e;
-                this.mp.leave();
-                this.mp = null;
-            }
+        if (typeof firebase === 'undefined') {
+            this.mpStatus = 'Matchmaking service failed to load.';
+            this.mpStatusColor = '#FF6666';
+            this.mpLobbyMode = 'failed';
+            return;
         }
-        this.mpStatus = 'Could not host: ' + ((lastErr && lastErr.message) || 'unknown error');
-        this.mpStatusColor = '#FF6666';
-        this.mpLobbyMode = 'menu';
+
+        // Capture the lobby and mp instances we create on this run so we can
+        // detect the user pressing Cancel mid-flow.
+        const lobby = this.lobby = new LobbyClient();
+        const mp = this.mp = new MultiplayerClient();
+        this._bindMPHandlers();
+
+        const cancelled = () => this.lobby !== lobby || this.mp !== mp;
+
+        try {
+            const match = await lobby.findMatch('pending-' + Math.random().toString(36).slice(2, 10));
+            if (cancelled()) return;
+
+            if (match.role === 'guest') {
+                // Opponent is already hosting — connect to them.
+                this.mpStatus = 'Opponent found! Connecting...';
+                this.mpStatusColor = '#44FF66';
+                await mp.connectToPeer(match.opponentPeerId);
+                if (cancelled()) return;
+                // The lobby slot was already cleared by the transaction.
+            } else {
+                // We're the host. Register on the broker, publish our peerId
+                // to the lobby slot so a guest can find us, then wait.
+                const ourId = await mp.hostPeer();
+                if (cancelled()) return;
+                // Republish — the lobby placeholder we wrote during findMatch
+                // used a temp id, swap it for the real PeerJS id.
+                await firebase.database().ref('lobby/waiting').set({ peerId: ourId, ts: Date.now() });
+                this.mpStatus = 'Waiting for an opponent to join...';
+                this.mpStatusColor = '#FFD700';
+                // From here, the 'connected' event handler picks up the incoming guest.
+            }
+        } catch (e) {
+            if (cancelled()) return;
+            console.warn('matchmaking failed', e);
+            this.mpStatus = (e && e.message) || 'Matchmaking failed';
+            this.mpStatusColor = '#FF6666';
+            this.mpLobbyMode = 'failed';
+            try { await lobby.leaveLobby(); } catch (_) {}
+            if (mp) mp.leave();
+        }
     }
 
-    async _joinRoomFlow() {
-        if (this.mpCodeBuf.length !== 4) {
-            this.mpStatus = 'Code must be 4 letters';
-            this.mpStatusColor = '#FF6666';
-            return;
-        }
-        this.mpStatus = 'Connecting to ' + this.mpCodeBuf + '...';
-        this.mpStatusColor = '#FFD700';
-        this.mpLobbyMode = 'connecting';
-        this.mp = new MultiplayerClient();
-        this._bindMPHandlers();
-        try {
-            await this.mp.joinRoom(this.mpCodeBuf);
-            this.mpStatus = 'Connected! Starting match...';
-            this.mpStatusColor = '#44FF66';
-        } catch (e) {
-            this.mpStatus = (e && e.message) || 'Connection failed';
-            this.mpStatusColor = '#FF6666';
-            if (this.mp) this.mp.leave();
-            this.mp = null;
-            this.mpLobbyMode = 'menu';
-        }
+    _cancelMatchmaking() {
+        if (this.lobby) this.lobby.leaveLobby().catch(() => {});
+        if (this.mp) this.mp.leave();
+        this.lobby = null;
+        this.mp = null;
+        this.state = 'MENU';
     }
 
     updateMPLobby(dt) {
-        // Type code via keyboard (when in 'join' input mode)
-        if (this.mpLobbyMode === 'join') {
-            for (const k of Object.keys(this.input.keys)) {
-                if (this.input.keys[k] && k.length === 1 && /^[a-z0-9]$/.test(k)) {
-                    if (this.mpCodeBuf.length < 4) {
-                        this.mpCodeBuf += k.toUpperCase();
-                    }
-                    this.input.keys[k] = false;
-                }
-            }
-            if (this.input.isKeyDown('backspace')) {
-                this.mpCodeBuf = this.mpCodeBuf.slice(0, -1);
-                this.input.keys['backspace'] = false;
-            }
-            if (this.input.isKeyDown('enter')) {
-                this.input.keys['enter'] = false;
-                this._joinRoomFlow();
-            }
-        }
-
         if (this.input.isKeyDown('escape')) {
             this.input.keys['escape'] = false;
-            if (this.mp) this.mp.leave();
-            this.mp = null;
-            this.state = 'MENU';
+            this._cancelMatchmaking();
             return;
         }
 
@@ -3905,69 +3907,20 @@ class Game {
 
         // Back button (top-left)
         if (mx > 20 && mx < 120 && my > 20 && my < 56) {
-            if (this.mp) this.mp.leave();
-            this.mp = null;
-            this.state = 'MENU';
+            this._cancelMatchmaking();
             return;
         }
 
-        if (this.mpLobbyMode === 'menu') {
-            // Host button — generates a code
-            if (mx > CANVAS_WIDTH / 2 - 200 && mx < CANVAS_WIDTH / 2 - 20 &&
-                my > 280 && my < 360) {
-                this._hostRoomFlow();
-                return;
+        // Cancel button (centered) — works whether searching or showing failure
+        const cx = CANVAS_WIDTH / 2 - 80, cy = 540;
+        if (mx > cx && mx < cx + 160 && my > cy && my < cy + 40) {
+            if (this.mpLobbyMode === 'failed') {
+                // Retry from a failure state
+                this.openMPLobby();
+            } else {
+                this._cancelMatchmaking();
             }
-            // Join button — opens code input
-            if (mx > CANVAS_WIDTH / 2 + 20 && mx < CANVAS_WIDTH / 2 + 200 &&
-                my > 280 && my < 360) {
-                this.mpLobbyMode = 'join';
-                this.mpCodeBuf = '';
-                this.mpStatus = 'Enter the host\'s code';
-                this.mpStatusColor = '#FFFFFF';
-                return;
-            }
-        } else if (this.mpLobbyMode === 'join') {
-            // Connect button
-            if (mx > CANVAS_WIDTH / 2 - 100 && mx < CANVAS_WIDTH / 2 + 100 &&
-                my > 600 && my < 644) {
-                this._joinRoomFlow();
-                return;
-            }
-            // Cancel back to menu
-            if (mx > CANVAS_WIDTH - 130 && mx < CANVAS_WIDTH - 20 &&
-                my > 600 && my < 644) {
-                this.mpLobbyMode = 'menu';
-                this.mpStatus = '';
-                return;
-            }
-            // On-screen keyboard tap
-            const tile = this._mpKeyboardHit(mx, my);
-            if (tile) {
-                if (tile.isBackspace) {
-                    this.mpCodeBuf = this.mpCodeBuf.slice(0, -1);
-                } else if (this.mpCodeBuf.length < 4) {
-                    this.mpCodeBuf += tile.ch;
-                    // Auto-connect when 4 chars are entered
-                    if (this.mpCodeBuf.length === 4) {
-                        // small delay so the user sees the last letter fill
-                        setTimeout(() => {
-                            if (this.mpLobbyMode === 'join') this._joinRoomFlow();
-                        }, 300);
-                    }
-                }
-                return;
-            }
-        } else if (this.mpLobbyMode === 'host') {
-            // Cancel host
-            if (mx > CANVAS_WIDTH / 2 - 80 && mx < CANVAS_WIDTH / 2 + 80 &&
-                my > 540 && my < 580) {
-                if (this.mp) this.mp.leave();
-                this.mp = null;
-                this.mpLobbyMode = 'menu';
-                this.mpStatus = '';
-                return;
-            }
+            return;
         }
     }
 
@@ -3997,190 +3950,70 @@ class Game {
         ctx.font = '14px Arial';
         ctx.fillText('Win a 1v1 match for +' + MP_WIN_XP + ' XP', CANVAS_WIDTH / 2, 130);
 
-        if (this.mpLobbyMode === 'menu') {
-            // Host card
-            const hx = CANVAS_WIDTH / 2 - 200, hy = 280, hw = 180, hh = 80;
-            const hHover = mx > hx && mx < hx + hw && my > hy && my < hy + hh;
-            ctx.fillStyle = hHover ? '#3a4488' : '#222244';
-            ctx.fillRect(hx, hy, hw, hh);
-            ctx.strokeStyle = '#4488FF';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(hx, hy, hw, hh);
-            ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold 22px Arial';
-            ctx.fillText('🏠 HOST', hx + hw / 2, hy + 36);
-            ctx.fillStyle = '#AAA';
-            ctx.font = '11px Arial';
-            ctx.fillText('Get a code, share it', hx + hw / 2, hy + 60);
+        // Big animated spinner / status ring
+        const cx = CANVAS_WIDTH / 2, cy = 340;
+        const t = (performance.now() - (this.mpSearchStart || 0)) / 1000;
 
-            // Join card
-            const jx = CANVAS_WIDTH / 2 + 20, jy = 280, jw = 180, jh = 80;
-            const jHover = mx > jx && mx < jx + jw && my > jy && my < jy + jh;
-            ctx.fillStyle = jHover ? '#883a44' : '#442222';
-            ctx.fillRect(jx, jy, jw, jh);
-            ctx.strokeStyle = '#FF8844';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(jx, jy, jw, jh);
-            ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold 22px Arial';
-            ctx.fillText('🚪 JOIN', jx + jw / 2, jy + 36);
-            ctx.fillStyle = '#AAA';
-            ctx.font = '11px Arial';
-            ctx.fillText('Type your friend\'s code', jx + jw / 2, jy + 60);
-        }
-
-        if (this.mpLobbyMode === 'host') {
-            // Show the code in big letters
+        if (this.mpLobbyMode === 'searching') {
+            // Pulsing crossed-swords animation
+            ctx.save();
+            ctx.translate(cx, cy);
+            const pulse = 1 + Math.sin(t * 3) * 0.05;
+            ctx.scale(pulse, pulse);
             ctx.fillStyle = '#FFD700';
-            ctx.font = 'bold 32px Arial';
-            ctx.fillText('Your code:', CANVAS_WIDTH / 2, 270);
-            ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold 100px monospace';
-            ctx.fillText(this.mpCodeBuf, CANVAS_WIDTH / 2, 380);
-            ctx.fillStyle = '#AAA';
-            ctx.font = '14px Arial';
-            ctx.fillText('Tell your friend to type this code on their JOIN screen.', CANVAS_WIDTH / 2, 420);
-            ctx.fillText('Waiting for opponent...', CANVAS_WIDTH / 2, 442);
+            ctx.font = 'bold 80px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('⚔️', 0, 30);
+            ctx.restore();
 
-            // Cancel button
-            const cx = CANVAS_WIDTH / 2 - 80, cy = 540;
-            const cHover = mx > cx && mx < cx + 160 && my > cy && my < cy + 40;
-            ctx.fillStyle = cHover ? '#5a3a3a' : '#3a2a2a';
-            ctx.fillRect(cx, cy, 160, 40);
-            ctx.strokeStyle = '#FF6666';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(cx, cy, 160, 40);
-            ctx.fillStyle = '#FFF';
-            ctx.font = 'bold 16px Arial';
-            ctx.fillText('Cancel', CANVAS_WIDTH / 2, cy + 26);
-        }
-
-        if (this.mpLobbyMode === 'join') {
-            ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold 20px Arial';
-            ctx.fillText('Enter the host\'s 4-letter code', CANVAS_WIDTH / 2, 200);
-
-            // 4 input boxes (slightly smaller / higher to make room for keyboard)
-            const boxSize = 56, boxGap = 10;
-            const totalW = boxSize * 4 + boxGap * 3;
-            const startX = (CANVAS_WIDTH - totalW) / 2;
-            const boxY = 220;
-            for (let i = 0; i < 4; i++) {
-                const bx = startX + i * (boxSize + boxGap);
-                const filled = i < this.mpCodeBuf.length;
-                ctx.fillStyle = filled ? '#222244' : '#111122';
-                ctx.fillRect(bx, boxY, boxSize, boxSize);
-                ctx.strokeStyle = filled ? '#FF8844' : '#444488';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(bx, boxY, boxSize, boxSize);
-                if (filled) {
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.font = 'bold 38px monospace';
-                    ctx.fillText(this.mpCodeBuf[i], bx + boxSize / 2, boxY + 42);
-                }
+            // Rotating dots ring around it
+            ctx.save();
+            ctx.translate(cx, cy);
+            for (let i = 0; i < 8; i++) {
+                const a = (t * 1.5 + i / 8) * Math.PI * 2;
+                const r = 90;
+                const alpha = 0.3 + 0.7 * ((Math.sin(t * 4 - i * 0.5) + 1) / 2);
+                ctx.fillStyle = `rgba(255, 200, 100, ${alpha})`;
+                ctx.beginPath();
+                ctx.arc(Math.cos(a) * r, Math.sin(a) * r, 6, 0, Math.PI * 2);
+                ctx.fill();
             }
+            ctx.restore();
 
-            // ----- On-screen keyboard (works on mobile + desktop) -----
-            this._drawMPKeyboard(ctx, mx, my);
-
-            // Connect button
-            const ccx = CANVAS_WIDTH / 2 - 100, ccy = 600;
-            const ccHover = mx > ccx && mx < ccx + 200 && my > ccy && my < ccy + 44;
-            const ready = this.mpCodeBuf.length === 4;
-            ctx.fillStyle = ready ? (ccHover ? '#5599FF' : '#4488FF') : '#445566';
-            ctx.fillRect(ccx, ccy, 200, 44);
-            ctx.strokeStyle = '#FFF';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(ccx, ccy, 200, 44);
-            ctx.fillStyle = '#FFF';
-            ctx.font = 'bold 18px Arial';
-            ctx.fillText('CONNECT', CANVAS_WIDTH / 2, ccy + 28);
-
-            // Cancel button (smaller, top-right of keyboard)
-            const cancelY = 600;
-            const cancelX = CANVAS_WIDTH - 130;
-            const cancelHover = mx > cancelX && mx < cancelX + 110 && my > cancelY && my < cancelY + 44;
-            ctx.fillStyle = cancelHover ? '#5a3a3a' : '#3a2a2a';
-            ctx.fillRect(cancelX, cancelY, 110, 44);
-            ctx.strokeStyle = '#FF6666';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(cancelX, cancelY, 110, 44);
-            ctx.fillStyle = '#FFF';
-            ctx.font = 'bold 14px Arial';
-            ctx.fillText('Cancel', cancelX + 55, cancelY + 27);
-        }
-
-        if (this.mpLobbyMode === 'connecting') {
-            ctx.fillStyle = '#FFD700';
+            // Status text
+            ctx.fillStyle = '#FFFFFF';
             ctx.font = 'bold 22px Arial';
-            ctx.fillText('Connecting...', CANVAS_WIDTH / 2, 380);
+            ctx.textAlign = 'center';
+            ctx.fillText(this.mpStatus || 'Searching for an opponent...', cx, cy + 140);
+
+            // Elapsed time
+            ctx.fillStyle = '#888';
+            ctx.font = '14px Arial';
+            ctx.fillText(`${Math.floor(t)}s elapsed`, cx, cy + 168);
         }
 
-        // Status line
-        if (this.mpStatus) {
-            ctx.fillStyle = this.mpStatusColor;
-            ctx.font = 'bold 16px Arial';
-            ctx.fillText(this.mpStatus, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 80);
+        if (this.mpLobbyMode === 'failed') {
+            ctx.fillStyle = '#FF6666';
+            ctx.font = 'bold 60px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('⚠️', cx, cy + 20);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 22px Arial';
+            ctx.fillText(this.mpStatus || 'Matchmaking failed', cx, cy + 80);
         }
-    }
 
-    // Layout for the on-screen alphabet keyboard
-    _mpKeyboardLayout() {
-        // 7-column grid; 25 letters minus skipped ambiguous chars (matches host code alphabet)
-        const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'.split('');
-        const cols = 7;
-        const tileW = 60, tileH = 50, gap = 6;
-        const rows = Math.ceil(chars.length / cols);
-        const totalW = cols * tileW + (cols - 1) * gap;
-        const startX = (CANVAS_WIDTH - totalW) / 2;
-        const startY = 320;
-
-        const tiles = [];
-        for (let i = 0; i < chars.length; i++) {
-            const col = i % cols, row = Math.floor(i / cols);
-            tiles.push({
-                ch: chars[i],
-                x: startX + col * (tileW + gap),
-                y: startY + row * (tileH + gap),
-                w: tileW, h: tileH
-            });
-        }
-        // Backspace at the bottom row
-        const lastRow = startY + rows * (tileH + gap);
-        tiles.push({
-            ch: '⌫', isBackspace: true,
-            x: CANVAS_WIDTH / 2 - 70, y: lastRow,
-            w: 140, h: tileH
-        });
-        return tiles;
-    }
-
-    _drawMPKeyboard(ctx, mx, my) {
-        const tiles = this._mpKeyboardLayout();
-        ctx.font = 'bold 20px Arial';
+        // Cancel / Retry button
+        const bx = CANVAS_WIDTH / 2 - 80, by = 540;
+        const bHover = mx > bx && mx < bx + 160 && my > by && my < by + 40;
+        ctx.fillStyle = bHover ? '#5a3a3a' : '#3a2a2a';
+        ctx.fillRect(bx, by, 160, 40);
+        ctx.strokeStyle = '#FF6666';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx, by, 160, 40);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 16px Arial';
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        for (const t of tiles) {
-            const hover = mx >= t.x && mx <= t.x + t.w && my >= t.y && my <= t.y + t.h;
-            ctx.fillStyle = t.isBackspace
-                ? (hover ? '#7a3a3a' : '#3a2a2a')
-                : (hover ? '#445588' : '#222244');
-            ctx.fillRect(t.x, t.y, t.w, t.h);
-            ctx.strokeStyle = t.isBackspace ? '#FF8866' : '#5566AA';
-            ctx.lineWidth = 1.5;
-            ctx.strokeRect(t.x, t.y, t.w, t.h);
-            ctx.fillStyle = '#FFF';
-            ctx.fillText(t.ch, t.x + t.w / 2, t.y + t.h / 2 + 1);
-        }
-        ctx.textBaseline = 'alphabetic';
-    }
-
-    _mpKeyboardHit(mx, my) {
-        const tiles = this._mpKeyboardLayout();
-        for (const t of tiles) {
-            if (mx >= t.x && mx <= t.x + t.w && my >= t.y && my <= t.y + t.h) return t;
-        }
-        return null;
+        ctx.fillText(this.mpLobbyMode === 'failed' ? 'Retry' : 'Cancel', cx, by + 26);
     }
 
     // ==================== 1V1 FIGHT ====================
@@ -4188,6 +4021,11 @@ class Game {
     _startMPFight() {
         this.state = 'MP_FIGHT';
         this.music.play('boss');
+        // Match started — release our lobby slot so the next player
+        // looking for a game doesn't try to connect to us.
+        if (this.lobby) {
+            this.lobby.leaveLobby().catch(() => {});
+        }
         this.mpResult = null;
         this._mpPendingResult = null;
         this._mpPendingResultDelay = 0;
@@ -4197,6 +4035,11 @@ class Game {
         this.mpOpponent = null;
         this.mpOpponentTarget = null;
         this.mpSendTimer = 0;
+
+        // Center weapon drops. Host owns spawning; both sides handle pickups.
+        this.mpDrops = [];
+        this._mpDropIdCounter = 1;
+        this._mpDropTimer = MP_DROP_FIRST_DELAY;
 
         // Set up player at one end of arena
         const isHost = this.mp.role === 'host';
@@ -4270,6 +4113,152 @@ class Game {
         this._mpPendingResultDelay = 1.5;
     }
 
+    _drawMPPillar(ctx, cam, wx, wy) {
+        const base = cam.worldToScreen(wx, wy);
+        const top = { x: base.x, y: base.y - 56 };
+        // Shadow on the floor
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.beginPath();
+        ctx.ellipse(base.x + 6, base.y + 4, 16, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Column shaft
+        const grad = ctx.createLinearGradient(top.x - 12, 0, top.x + 12, 0);
+        grad.addColorStop(0, '#4a3a55');
+        grad.addColorStop(0.5, '#7a6a85');
+        grad.addColorStop(1, '#3a2a45');
+        ctx.fillStyle = grad;
+        ctx.fillRect(top.x - 11, top.y, 22, 56);
+        // Cap + base
+        ctx.fillStyle = '#5a4a65';
+        ctx.fillRect(top.x - 14, top.y - 6, 28, 8);
+        ctx.fillRect(top.x - 14, base.y - 4, 28, 6);
+        // Highlight
+        ctx.fillStyle = 'rgba(255,255,255,0.08)';
+        ctx.fillRect(top.x - 9, top.y + 2, 4, 50);
+
+        // Torch on top — tiny flickering flame
+        const flick = 0.7 + 0.3 * Math.sin(this.gameTime * 18 + wx);
+        ctx.fillStyle = `rgba(255, 180, 60, ${0.85 * flick})`;
+        ctx.beginPath();
+        ctx.arc(top.x, top.y - 14, 6 * flick, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgba(255, 230, 130, ${0.9 * flick})`;
+        ctx.beginPath();
+        ctx.arc(top.x, top.y - 14, 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Render a center weapon drop in iso. The marker pulses + bobs.
+    _drawMPDrop(ctx, cam, drop) {
+        const wpn = WEAPON_DEFS[drop.weaponKey];
+        if (!wpn) return;
+        const pos = cam.worldToScreen(drop.x, drop.y);
+        const t = drop.spawnT || 0;
+        const bob = Math.sin(t * 4) * 4;
+        const glowR = 22 + Math.sin(t * 3) * 4;
+
+        // Shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.beginPath();
+        ctx.ellipse(pos.x, pos.y + 4, 14, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Glow halo
+        const glow = ctx.createRadialGradient(pos.x, pos.y - 8 + bob, 2, pos.x, pos.y - 8 + bob, glowR);
+        glow.addColorStop(0, 'rgba(255, 230, 100, 0.55)');
+        glow.addColorStop(1, 'rgba(255, 230, 100, 0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y - 8 + bob, glowR, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Weapon icon (simple stylized: line for melee, line + tip for ranged)
+        ctx.save();
+        ctx.translate(pos.x, pos.y - 8 + bob);
+        ctx.rotate(Math.sin(t * 2) * 0.15 - Math.PI / 4);
+        if (wpn.type === 'ranged') {
+            // Bow-style arc
+            ctx.strokeStyle = wpn.color;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, 12, -Math.PI * 0.4, Math.PI * 0.4);
+            ctx.stroke();
+            // String
+            ctx.strokeStyle = '#EEE';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(11, -10);
+            ctx.lineTo(11, 10);
+            ctx.stroke();
+        } else {
+            // Sword: blade + crossguard + grip
+            ctx.strokeStyle = wpn.color;
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-10, 10);
+            ctx.lineTo(14, -14);
+            ctx.stroke();
+            ctx.strokeStyle = '#5a3a1a';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(-12, 12);
+            ctx.lineTo(-4, 4);
+            ctx.stroke();
+            // Crossguard
+            ctx.strokeStyle = '#caa040';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-8, 0);
+            ctx.lineTo(4, 8);
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        // Weapon name label above
+        if (t < 1.2) {
+            const a = Math.min(1, t * 2);
+            ctx.globalAlpha = a;
+            ctx.fillStyle = '#FFD700';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.font = 'bold 11px Arial';
+            ctx.textAlign = 'center';
+            ctx.strokeText(wpn.name, pos.x, pos.y - 28 + bob);
+            ctx.fillText(wpn.name, pos.x, pos.y - 28 + bob);
+            ctx.globalAlpha = 1;
+        }
+    }
+
+    // Host-only: pick a random weapon and a random spot in the central
+    // band of the arena, push to local list, return the drop.
+    _spawnMPDrop() {
+        const w = MP_WEAPON_DROP_POOL[Math.floor(Math.random() * MP_WEAPON_DROP_POOL.length)];
+        const bandW = MP_ARENA_WIDTH * MP_DROP_CENTER_FRAC;
+        const x = MP_ARENA_WIDTH / 2 + (Math.random() - 0.5) * bandW;
+        const y = 80 + Math.random() * (MP_ARENA_HEIGHT - 160);
+        const drop = { id: this._mpDropIdCounter++, weaponKey: w, x, y, spawnT: 0 };
+        this.mpDrops.push(drop);
+        return drop;
+    }
+
+    // Local player walked over a drop — claim it: equip the weapon, tell the
+    // other side, and remove from our list. Idempotent over the network: if
+    // both players claim simultaneously, both equip; the duplicate 'pickup'
+    // messages are no-ops.
+    _claimMPDrop(drop) {
+        // Replace current weapon (single-slot inventory in MP).
+        this.player.inventory = [];
+        this.player.activeSlot = 0;
+        this.player.weapon = null;
+        this.player.addWeapon(drop.weaponKey);
+        spawnHitParticles(this.mpParticles, drop.x, drop.y, '#FFD700', 12);
+        // Pickup label as a short-lived particle (reuses the floating-text update from particles.js).
+        this.mpParticles.push(new MPPickupLabel(drop.x, drop.y - 14, WEAPON_DEFS[drop.weaponKey].name));
+        this.mpDrops = this.mpDrops.filter(d => d.id !== drop.id);
+        if (this.mp) this.mp.send('pickup', { id: drop.id });
+    }
+
     _endMPFight(result, customMsg) {
         if (this.mpResult) return;
         this.mpResult = result;
@@ -4307,8 +4296,11 @@ class Game {
 
         const cam = this._mpCamera;
         const input = this.input;
+        const touchSprint = this.touch.active && this.touch.sprintPressed;
 
-        // Player movement (iso-style like other interior fights)
+        // Player movement (iso-style like other interior fights). Mirrors
+        // player.update() including the R-key sprint with stamina drain so
+        // 1v1 has the same feel as the PvE mode.
         let mx = 0, my = 0;
         if (input.isKeyDown('w') || input.isKeyDown('arrowup'))    { mx -= 1; my -= 1; }
         if (input.isKeyDown('s') || input.isKeyDown('arrowdown'))  { mx += 1; my += 1; }
@@ -4316,8 +4308,30 @@ class Game {
         if (input.isKeyDown('d') || input.isKeyDown('arrowright')) { mx += 1; my -= 1; }
         const mLen = Math.sqrt(mx * mx + my * my);
         if (mLen > 0) { mx /= mLen; my /= mLen; }
-        this.player.vx = mx * this.player.speed;
-        this.player.vy = my * this.player.speed;
+
+        // Sprint: R key on desktop, sprint button on mobile.
+        const moving = (Math.abs(mx) > 0 || Math.abs(my) > 0);
+        const wantsSprint = (input.isKeyDown('r') || touchSprint) && moving;
+        let speedMod = 1.0;
+        if (wantsSprint && !this.player.staminaExhausted && this.player.stamina > 0) {
+            this.player.sprinting = true;
+            this.player.stamina -= this.player.staminaDrain * dt;
+            if (this.player.stamina <= 0) {
+                this.player.stamina = 0;
+                this.player.staminaExhausted = true;
+                this.player.sprinting = false;
+            }
+            speedMod = 1.6;
+        } else {
+            this.player.sprinting = false;
+            this.player.stamina = Math.min(this.player.maxStamina, this.player.stamina + this.player.staminaRegen * dt);
+            if (this.player.staminaExhausted && this.player.stamina >= this.player.maxStamina * 0.3) {
+                this.player.staminaExhausted = false;
+            }
+        }
+
+        this.player.vx = mx * this.player.speed * speedMod;
+        this.player.vy = my * this.player.speed * speedMod;
         this.player.x += this.player.vx * dt;
         this.player.y += this.player.vy * dt;
         this.player.x = clamp(this.player.x, 30, MP_ARENA_WIDTH - 30);
@@ -4334,11 +4348,27 @@ class Game {
         // Interpolate opponent stub toward latest network state
         if (this.mpOpponentTarget) {
             const t = this.mpOpponent || (this.mpOpponent = { ...this.mpOpponentTarget });
+            const prevX = t.x;
+            const prevY = t.y;
             const lerpAmt = Math.min(1, dt * 12);
             t.x = lerp(t.x ?? this.mpOpponentTarget.x, this.mpOpponentTarget.x, lerpAmt);
             t.y = lerp(t.y ?? this.mpOpponentTarget.y, this.mpOpponentTarget.y, lerpAmt);
             t.facing = this.mpOpponentTarget.facing;
             t.hp = this.mpOpponentTarget.hp;
+            t.weapon = this.mpOpponentTarget.weapon || t.weapon;
+            // Derive velocity from interpolated position so the walk cycle
+            // animates without needing the sender to ship vx/vy.
+            if (dt > 0 && prevX !== undefined && prevY !== undefined) {
+                t.vx = (t.x - prevX) / dt;
+                t.vy = (t.y - prevY) / dt;
+            } else {
+                t.vx = 0; t.vy = 0;
+            }
+            const speed = Math.sqrt(t.vx * t.vx + t.vy * t.vy);
+            if (speed > 5) {
+                t.moveFacing = Math.atan2(t.vy, t.vx);
+                t.walkTimer = (t.walkTimer || 0) + dt;
+            }
             // Update stub for hit detection
             this._mpOppStub.x = t.x;
             this._mpOppStub.y = t.y;
@@ -4371,6 +4401,7 @@ class Game {
                 facing: this.player.facing,
                 hp: this.player.health,
                 attack: this.player.attackAnim > 0,
+                weapon: this.player.weapon ? this.player.weapon.key : 'WOODEN_SWORD',
                 ts: Date.now()
             });
         }
@@ -4381,6 +4412,28 @@ class Game {
             this.player._lastSentEmote = this.player.emote.key;
         }
         if (!this.player.emote) this.player._lastSentEmote = null;
+
+        // ---- Center weapon drops ----
+        // Host owns the spawn schedule; it broadcasts drops, guest just mirrors.
+        if (this.mp.role === 'host' && this.player.alive) {
+            this._mpDropTimer -= dt;
+            if (this._mpDropTimer <= 0 && this.mpDrops.length < MP_DROP_MAX_COUNT) {
+                const drop = this._spawnMPDrop();
+                this.mp.send('drop', { id: drop.id, weaponKey: drop.weaponKey, x: drop.x, y: drop.y });
+                this._mpDropTimer = MP_DROP_INTERVAL;
+            }
+        }
+        // Animate drops + check pickup distance for our local player.
+        for (const d of this.mpDrops) d.spawnT = (d.spawnT || 0) + dt;
+        if (this.player.alive && this.mpDrops.length > 0) {
+            for (const d of this.mpDrops.slice()) {
+                const dx = d.x - this.player.x;
+                const dy = d.y - this.player.y;
+                if (dx * dx + dy * dy <= MP_DROP_PICKUP_RADIUS * MP_DROP_PICKUP_RADIUS) {
+                    this._claimMPDrop(d);
+                }
+            }
+        }
 
         // Update projectiles
         for (const proj of this.mpProjectiles) {
@@ -4406,237 +4459,128 @@ class Game {
         // (Death handled via _killSelf / _killOpponent — see top of update.)
     }
 
-    _drawColiseum(ctx, cam) {
-        // Sky gradient (warm sunset over an open-air arena)
-        const sky = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-        sky.addColorStop(0, '#3a2840');
-        sky.addColorStop(0.4, '#6a3a3a');
-        sky.addColorStop(1, '#3a2828');
-        ctx.fillStyle = sky;
+    renderMPFight() {
+        const ctx = this.ctx;
+        const cam = this._mpCamera;
+        if (!cam) return;
+
+        // Background gradient (dark sky behind the colosseum)
+        const bg = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+        bg.addColorStop(0, '#100818');
+        bg.addColorStop(1, '#1a0f24');
+        ctx.fillStyle = bg;
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-        // Project arena corners (iso)
+        // Arena floor — a stone diamond drawn in iso. Rendered as a base
+        // fill plus a checker tile pattern + concentric rings around the
+        // center pad where weapon drops appear.
         const corners = [
             cam.worldToScreen(0, 0),
             cam.worldToScreen(MP_ARENA_WIDTH, 0),
             cam.worldToScreen(MP_ARENA_WIDTH, MP_ARENA_HEIGHT),
             cam.worldToScreen(0, MP_ARENA_HEIGHT)
         ];
-
-        // ---- Stadium tiers (concentric rings of seats behind the arena) ----
-        // Drawn as colored bands on the screen behind the arena floor diamond.
-        const cx = CANVAS_WIDTH / 2;
-        const cy = CANVAS_HEIGHT / 2;
-        const tiers = [
-            { rx: 720, ry: 520, color: '#6e4622' }, // outermost wall
-            { rx: 660, ry: 470, color: '#84502a' }, // back rows
-            { rx: 600, ry: 420, color: '#9c5e34' },
-            { rx: 540, ry: 370, color: '#b67442' }, // crowd-warm tone
-            { rx: 480, ry: 320, color: '#c8854a' }
-        ];
-        for (const t of tiers) {
-            ctx.fillStyle = t.color;
-            ctx.beginPath();
-            ctx.ellipse(cx, cy, t.rx, t.ry, 0, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        // ---- Crowd dots on the upper tier (subtle bobbing) ----
-        const time = this.gameTime || 0;
-        ctx.save();
-        for (let i = 0; i < 80; i++) {
-            const angle = (i / 80) * Math.PI * 2;
-            // Pick a tier ring (only top half visible mostly behind arena)
-            const ringIdx = i % 3;
-            const tier = tiers[ringIdx + 1];
-            const r = tier.rx + 18;
-            const ry = tier.ry + 12;
-            const px = cx + Math.cos(angle) * r;
-            const py = cy + Math.sin(angle) * ry - 4;
-            // Skip dots that fall too low (in front of arena where players fight)
-            if (py > cy + 200) continue;
-            const bob = Math.sin(time * 4 + i * 0.7) * 1.5;
-            ctx.fillStyle = ['#FFD700', '#FF6644', '#44CCFF', '#FFFFFF', '#88FF88'][i % 5];
-            ctx.fillRect(px, py + bob, 3, 4);
-        }
-        ctx.restore();
-
-        // ---- Inner stone wall (rim around the arena floor) ----
-        // Draw a bigger diamond behind the arena and step inward to make a ring.
-        const expand = 18; // wall thickness
-        const expandedCorners = corners.map((c, i) => {
-            const dx = c.x - cx;
-            const dy = c.y - cy;
-            const len = Math.sqrt(dx * dx + dy * dy);
-            return { x: c.x + (dx / len) * expand, y: c.y + (dy / len) * expand };
-        });
-        ctx.fillStyle = '#3a2818';
-        ctx.beginPath();
-        ctx.moveTo(expandedCorners[0].x, expandedCorners[0].y);
-        for (let i = 1; i < 4; i++) ctx.lineTo(expandedCorners[i].x, expandedCorners[i].y);
-        ctx.closePath();
-        ctx.fill();
-
-        // Wall top stones (lighter band)
-        ctx.fillStyle = '#7a5530';
-        ctx.beginPath();
-        ctx.moveTo(expandedCorners[0].x, expandedCorners[0].y);
-        for (let i = 1; i < 4; i++) ctx.lineTo(expandedCorners[i].x, expandedCorners[i].y);
-        ctx.closePath();
-        ctx.lineWidth = 6;
-        ctx.strokeStyle = '#7a5530';
-        ctx.stroke();
-
-        // ---- Sandy arena floor (warm tan) ----
-        const sandGrad = ctx.createRadialGradient(cx, cy, 50, cx, cy, 480);
-        sandGrad.addColorStop(0, '#e7c178');
-        sandGrad.addColorStop(0.7, '#c8a058');
-        sandGrad.addColorStop(1, '#a07a3a');
-        ctx.fillStyle = sandGrad;
+        ctx.fillStyle = '#2c2336';
         ctx.beginPath();
         ctx.moveTo(corners[0].x, corners[0].y);
         for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
         ctx.closePath();
         ctx.fill();
 
-        // Sandy speckles
-        ctx.fillStyle = 'rgba(120, 80, 30, 0.3)';
-        for (let i = 0; i < 60; i++) {
-            // Use deterministic pseudo-random based on i so it doesn't shimmer
-            const r1 = ((i * 9301 + 49297) % 233280) / 233280;
-            const r2 = ((i * 5381 + 12345) % 32768) / 32768;
-            const sx = r1 * MP_ARENA_WIDTH;
-            const sy = r2 * MP_ARENA_HEIGHT;
-            const sp = cam.worldToScreen(sx, sy);
+        // Tile grid: alternating shades for stone-floor texture.
+        const tile = 100;
+        const cols = Math.ceil(MP_ARENA_WIDTH / tile);
+        const rows = Math.ceil(MP_ARENA_HEIGHT / tile);
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
+        ctx.closePath();
+        ctx.clip();
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                if ((r + c) % 2 !== 0) continue;
+                const tc = [
+                    cam.worldToScreen(c * tile, r * tile),
+                    cam.worldToScreen((c + 1) * tile, r * tile),
+                    cam.worldToScreen((c + 1) * tile, (r + 1) * tile),
+                    cam.worldToScreen(c * tile, (r + 1) * tile)
+                ];
+                ctx.fillStyle = '#332940';
+                ctx.beginPath();
+                ctx.moveTo(tc[0].x, tc[0].y);
+                ctx.lineTo(tc[1].x, tc[1].y);
+                ctx.lineTo(tc[2].x, tc[2].y);
+                ctx.lineTo(tc[3].x, tc[3].y);
+                ctx.closePath();
+                ctx.fill();
+            }
+        }
+        // Subtle grid lines
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+        ctx.lineWidth = 1;
+        for (let c = 0; c <= cols; c++) {
+            const a = cam.worldToScreen(c * tile, 0);
+            const b = cam.worldToScreen(c * tile, MP_ARENA_HEIGHT);
             ctx.beginPath();
-            ctx.arc(sp.x, sp.y, 1.5, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+        }
+        for (let r = 0; r <= rows; r++) {
+            const a = cam.worldToScreen(0, r * tile);
+            const b = cam.worldToScreen(MP_ARENA_WIDTH, r * tile);
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
         }
 
-        // ---- Center logo (laurel circle) ----
-        const center = cam.worldToScreen(MP_ARENA_WIDTH / 2, MP_ARENA_HEIGHT / 2);
-        ctx.strokeStyle = 'rgba(120, 80, 30, 0.4)';
+        // Centre pad — three concentric glowing rings telegraph the drop zone.
+        const cwx = MP_ARENA_WIDTH / 2;
+        const cwy = MP_ARENA_HEIGHT / 2;
+        const pulse = 0.5 + 0.5 * Math.sin(this.gameTime * 1.6);
+        for (let i = 3; i >= 1; i--) {
+            const r = i * 80;
+            const alpha = 0.10 + (i === 1 ? pulse * 0.18 : 0);
+            ctx.strokeStyle = `rgba(255, 215, 80, ${alpha})`;
+            ctx.lineWidth = i === 1 ? 3 : 2;
+            ctx.beginPath();
+            // Approximate iso circle as a diamond ellipse.
+            const center = cam.worldToScreen(cwx, cwy);
+            ctx.ellipse(center.x, center.y, r, r * 0.5, 0, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        // Center marker emblem
+        {
+            const center = cam.worldToScreen(cwx, cwy);
+            ctx.fillStyle = `rgba(255, 215, 80, ${0.10 + pulse * 0.10})`;
+            ctx.beginPath();
+            ctx.ellipse(center.x, center.y, 22, 11, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.restore();
+
+        // Decorative pillars at the four corners (offset slightly inside the wall).
+        this._drawMPPillar(ctx, cam, 60, 60);
+        this._drawMPPillar(ctx, cam, MP_ARENA_WIDTH - 60, 60);
+        this._drawMPPillar(ctx, cam, 60, MP_ARENA_HEIGHT - 60);
+        this._drawMPPillar(ctx, cam, MP_ARENA_WIDTH - 60, MP_ARENA_HEIGHT - 60);
+
+        // Wall outline (with thicker dark inner stroke for depth)
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.strokeStyle = '#7a4d8a';
         ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.ellipse(center.x, center.y, 90, 45, 0, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.ellipse(center.x, center.y, 70, 35, 0, 0, Math.PI * 2);
-        ctx.stroke();
-        // Crossed swords mark
-        ctx.strokeStyle = 'rgba(80, 50, 20, 0.55)';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.moveTo(center.x - 30, center.y - 14);
-        ctx.lineTo(center.x + 30, center.y + 14);
-        ctx.moveTo(center.x - 30, center.y + 14);
-        ctx.lineTo(center.x + 30, center.y - 14);
         ctx.stroke();
 
-        // ---- Pillars at the four arena corners ----
-        for (const c of corners) {
-            // Pillar shadow on sand
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
-            ctx.beginPath();
-            ctx.ellipse(c.x, c.y + 10, 18, 6, 0, 0, Math.PI * 2);
-            ctx.fill();
-            // Column body (light stone)
-            ctx.fillStyle = '#d8c5a0';
-            ctx.fillRect(c.x - 8, c.y - 70, 16, 70);
-            ctx.strokeStyle = '#9a8060';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(c.x - 8, c.y - 70, 16, 70);
-            // Capital (top)
-            ctx.fillStyle = '#bfa680';
-            ctx.fillRect(c.x - 12, c.y - 78, 24, 8);
-            // Base
-            ctx.fillStyle = '#a08a60';
-            ctx.fillRect(c.x - 11, c.y - 4, 22, 6);
-        }
-
-        // ---- Hanging banners along the back wall ----
-        const banners = [
-            { tx: 0.18, color: '#cc3322' },
-            { tx: 0.50, color: '#dca838' },
-            { tx: 0.82, color: '#3266bb' }
-        ];
-        for (const b of banners) {
-            const bp = cam.worldToScreen(MP_ARENA_WIDTH * b.tx, 0);
-            const top = bp.y - 110;
-            // Banner cloth (small flag)
-            ctx.fillStyle = b.color;
-            ctx.fillRect(bp.x - 14, top, 28, 36);
-            // Pointed bottom
-            ctx.beginPath();
-            ctx.moveTo(bp.x - 14, top + 36);
-            ctx.lineTo(bp.x, top + 46);
-            ctx.lineTo(bp.x + 14, top + 36);
-            ctx.closePath();
-            ctx.fill();
-            // Gold trim
-            ctx.fillStyle = '#FFD700';
-            ctx.fillRect(bp.x - 14, top + 30, 28, 2);
-            // Pole
-            ctx.strokeStyle = '#5a3a1a';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(bp.x, top - 4);
-            ctx.lineTo(bp.x, top + 46);
-            ctx.stroke();
-        }
-
-        // ---- Torches at the corners (animated flame) ----
-        for (let i = 0; i < corners.length; i++) {
-            const c = corners[i];
-            const flameY = c.y - 84;
-            const flicker = Math.sin(time * 12 + i * 1.7);
-            // Pole
-            ctx.strokeStyle = '#3a2010';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(c.x, c.y - 80);
-            ctx.lineTo(c.x, c.y - 70);
-            ctx.stroke();
-            // Bowl
-            ctx.fillStyle = '#5a3a1a';
-            ctx.beginPath();
-            ctx.ellipse(c.x, c.y - 80, 6, 3, 0, 0, Math.PI * 2);
-            ctx.fill();
-            // Flame
-            const flameH = 14 + flicker * 3;
-            const flameW = 6 + flicker * 1;
-            const fGrad = ctx.createRadialGradient(c.x, flameY - 4, 1, c.x, flameY - 4, flameH);
-            fGrad.addColorStop(0, '#FFFAA0');
-            fGrad.addColorStop(0.4, '#FF9930');
-            fGrad.addColorStop(1, 'rgba(255, 60, 0, 0)');
-            ctx.fillStyle = fGrad;
-            ctx.beginPath();
-            ctx.ellipse(c.x, flameY - 4, flameW, flameH, 0, 0, Math.PI * 2);
-            ctx.fill();
-            // Glow on the surrounding stone
-            ctx.fillStyle = 'rgba(255, 150, 60, 0.12)';
-            ctx.beginPath();
-            ctx.arc(c.x, c.y - 70, 28, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        // ---- Subtle center line (red sand line) ----
-        ctx.strokeStyle = 'rgba(160, 60, 60, 0.25)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        const topLine = cam.worldToScreen(MP_ARENA_WIDTH / 2, 0);
-        const botLine = cam.worldToScreen(MP_ARENA_WIDTH / 2, MP_ARENA_HEIGHT);
-        ctx.moveTo(topLine.x, topLine.y);
-        ctx.lineTo(botLine.x, botLine.y);
-        ctx.stroke();
-    }
-
-    renderMPFight() {
-        const ctx = this.ctx;
-        const cam = this._mpCamera;
-        if (!cam) return;
-
-        this._drawColiseum(ctx, cam);
+        // Center weapon drops (under the fighters so they walk in front).
+        for (const d of this.mpDrops) this._drawMPDrop(ctx, cam, d);
 
         // Opponent stickman (alive: regular draw; dying: death animation)
         if (this.mpOpponent) {
@@ -4644,8 +4588,10 @@ class Game {
                 x: this._mpOppStub.x ?? this.mpOpponent.x,
                 y: this._mpOppStub.y ?? this.mpOpponent.y,
                 facing: this.mpOpponent.facing || 0,
-                vx: 0, vy: 0,
-                walkTimer: this.gameTime, moveFacing: this.mpOpponent.facing,
+                vx: this.mpOpponent.vx || 0,
+                vy: this.mpOpponent.vy || 0,
+                walkTimer: this.mpOpponent.walkTimer || 0,
+                moveFacing: this.mpOpponent.moveFacing != null ? this.mpOpponent.moveFacing : this.mpOpponent.facing,
                 attackAnim: this.mpOpponent.attack ? 0.5 : 0,
                 health: this.mpOpponent.hp ?? 100, maxHealth: 100,
                 alive: this._mpOppStub.alive, isPlayer: false, team: TEAMS.RED,
@@ -4653,7 +4599,11 @@ class Game {
                 deathTimer: this._mpOppStub.deathTimer,
                 deathMaxTimer: this._mpOppStub.deathMaxTimer,
                 fallDir: this._mpOppStub.fallDir,
-                weapon: { key: 'WOODEN_SWORD', color: WEAPON_DEFS.WOODEN_SWORD.color, type: 'melee' }
+                weapon: (() => {
+                    const k = this.mpOpponent.weapon || 'WOODEN_SWORD';
+                    const def = WEAPON_DEFS[k] || WEAPON_DEFS.WOODEN_SWORD;
+                    return { key: k, color: def.color, type: def.type };
+                })()
             };
             if (!opp.alive && opp.deathTimer > 0) {
                 drawStickmanDeath(ctx, opp, cam);
@@ -4721,11 +4671,11 @@ class Game {
         ctx.strokeStyle = '#FFF';
         ctx.strokeRect(CANVAS_WIDTH - 220, 25, 200, 14);
 
-        // Center: code
+        // Center: match label
         ctx.textAlign = 'center';
         ctx.fillStyle = '#FFD700';
         ctx.font = 'bold 14px Arial';
-        ctx.fillText('1V1 — Room ' + (this.mp ? this.mp.code : '????'), CANVAS_WIDTH / 2, 32);
+        ctx.fillText('1V1 ONLINE', CANVAS_WIDTH / 2, 32);
 
         // Inventory + emote button still useful
         this.hud.drawInventoryBar(ctx, this.player, this.input);
