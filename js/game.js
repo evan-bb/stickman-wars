@@ -4406,47 +4406,237 @@ class Game {
         // (Death handled via _killSelf / _killOpponent — see top of update.)
     }
 
-    renderMPFight() {
-        const ctx = this.ctx;
-        const cam = this._mpCamera;
-        if (!cam) return;
-
-        // Background
-        ctx.fillStyle = '#1a1020';
+    _drawColiseum(ctx, cam) {
+        // Sky gradient (warm sunset over an open-air arena)
+        const sky = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+        sky.addColorStop(0, '#3a2840');
+        sky.addColorStop(0.4, '#6a3a3a');
+        sky.addColorStop(1, '#3a2828');
+        ctx.fillStyle = sky;
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-        // Arena floor (dark stone-like)
+        // Project arena corners (iso)
         const corners = [
             cam.worldToScreen(0, 0),
             cam.worldToScreen(MP_ARENA_WIDTH, 0),
             cam.worldToScreen(MP_ARENA_WIDTH, MP_ARENA_HEIGHT),
             cam.worldToScreen(0, MP_ARENA_HEIGHT)
         ];
-        ctx.fillStyle = '#2a2230';
+
+        // ---- Stadium tiers (concentric rings of seats behind the arena) ----
+        // Drawn as colored bands on the screen behind the arena floor diamond.
+        const cx = CANVAS_WIDTH / 2;
+        const cy = CANVAS_HEIGHT / 2;
+        const tiers = [
+            { rx: 720, ry: 520, color: '#6e4622' }, // outermost wall
+            { rx: 660, ry: 470, color: '#84502a' }, // back rows
+            { rx: 600, ry: 420, color: '#9c5e34' },
+            { rx: 540, ry: 370, color: '#b67442' }, // crowd-warm tone
+            { rx: 480, ry: 320, color: '#c8854a' }
+        ];
+        for (const t of tiers) {
+            ctx.fillStyle = t.color;
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, t.rx, t.ry, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // ---- Crowd dots on the upper tier (subtle bobbing) ----
+        const time = this.gameTime || 0;
+        ctx.save();
+        for (let i = 0; i < 80; i++) {
+            const angle = (i / 80) * Math.PI * 2;
+            // Pick a tier ring (only top half visible mostly behind arena)
+            const ringIdx = i % 3;
+            const tier = tiers[ringIdx + 1];
+            const r = tier.rx + 18;
+            const ry = tier.ry + 12;
+            const px = cx + Math.cos(angle) * r;
+            const py = cy + Math.sin(angle) * ry - 4;
+            // Skip dots that fall too low (in front of arena where players fight)
+            if (py > cy + 200) continue;
+            const bob = Math.sin(time * 4 + i * 0.7) * 1.5;
+            ctx.fillStyle = ['#FFD700', '#FF6644', '#44CCFF', '#FFFFFF', '#88FF88'][i % 5];
+            ctx.fillRect(px, py + bob, 3, 4);
+        }
+        ctx.restore();
+
+        // ---- Inner stone wall (rim around the arena floor) ----
+        // Draw a bigger diamond behind the arena and step inward to make a ring.
+        const expand = 18; // wall thickness
+        const expandedCorners = corners.map((c, i) => {
+            const dx = c.x - cx;
+            const dy = c.y - cy;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            return { x: c.x + (dx / len) * expand, y: c.y + (dy / len) * expand };
+        });
+        ctx.fillStyle = '#3a2818';
+        ctx.beginPath();
+        ctx.moveTo(expandedCorners[0].x, expandedCorners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(expandedCorners[i].x, expandedCorners[i].y);
+        ctx.closePath();
+        ctx.fill();
+
+        // Wall top stones (lighter band)
+        ctx.fillStyle = '#7a5530';
+        ctx.beginPath();
+        ctx.moveTo(expandedCorners[0].x, expandedCorners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(expandedCorners[i].x, expandedCorners[i].y);
+        ctx.closePath();
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = '#7a5530';
+        ctx.stroke();
+
+        // ---- Sandy arena floor (warm tan) ----
+        const sandGrad = ctx.createRadialGradient(cx, cy, 50, cx, cy, 480);
+        sandGrad.addColorStop(0, '#e7c178');
+        sandGrad.addColorStop(0.7, '#c8a058');
+        sandGrad.addColorStop(1, '#a07a3a');
+        ctx.fillStyle = sandGrad;
         ctx.beginPath();
         ctx.moveTo(corners[0].x, corners[0].y);
         for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
         ctx.closePath();
         ctx.fill();
 
-        // Center line
-        ctx.strokeStyle = 'rgba(255, 100, 100, 0.4)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        const top = cam.worldToScreen(MP_ARENA_WIDTH / 2, 0);
-        const bot = cam.worldToScreen(MP_ARENA_WIDTH / 2, MP_ARENA_HEIGHT);
-        ctx.moveTo(top.x, top.y);
-        ctx.lineTo(bot.x, bot.y);
-        ctx.stroke();
+        // Sandy speckles
+        ctx.fillStyle = 'rgba(120, 80, 30, 0.3)';
+        for (let i = 0; i < 60; i++) {
+            // Use deterministic pseudo-random based on i so it doesn't shimmer
+            const r1 = ((i * 9301 + 49297) % 233280) / 233280;
+            const r2 = ((i * 5381 + 12345) % 32768) / 32768;
+            const sx = r1 * MP_ARENA_WIDTH;
+            const sy = r2 * MP_ARENA_HEIGHT;
+            const sp = cam.worldToScreen(sx, sy);
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
 
-        // Wall outline
-        ctx.strokeStyle = '#6a4070';
+        // ---- Center logo (laurel circle) ----
+        const center = cam.worldToScreen(MP_ARENA_WIDTH / 2, MP_ARENA_HEIGHT / 2);
+        ctx.strokeStyle = 'rgba(120, 80, 30, 0.4)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(center.x, center.y, 90, 45, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(center.x, center.y, 70, 35, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        // Crossed swords mark
+        ctx.strokeStyle = 'rgba(80, 50, 20, 0.55)';
         ctx.lineWidth = 4;
         ctx.beginPath();
-        ctx.moveTo(corners[0].x, corners[0].y);
-        for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
-        ctx.closePath();
+        ctx.moveTo(center.x - 30, center.y - 14);
+        ctx.lineTo(center.x + 30, center.y + 14);
+        ctx.moveTo(center.x - 30, center.y + 14);
+        ctx.lineTo(center.x + 30, center.y - 14);
         ctx.stroke();
+
+        // ---- Pillars at the four arena corners ----
+        for (const c of corners) {
+            // Pillar shadow on sand
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+            ctx.beginPath();
+            ctx.ellipse(c.x, c.y + 10, 18, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // Column body (light stone)
+            ctx.fillStyle = '#d8c5a0';
+            ctx.fillRect(c.x - 8, c.y - 70, 16, 70);
+            ctx.strokeStyle = '#9a8060';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(c.x - 8, c.y - 70, 16, 70);
+            // Capital (top)
+            ctx.fillStyle = '#bfa680';
+            ctx.fillRect(c.x - 12, c.y - 78, 24, 8);
+            // Base
+            ctx.fillStyle = '#a08a60';
+            ctx.fillRect(c.x - 11, c.y - 4, 22, 6);
+        }
+
+        // ---- Hanging banners along the back wall ----
+        const banners = [
+            { tx: 0.18, color: '#cc3322' },
+            { tx: 0.50, color: '#dca838' },
+            { tx: 0.82, color: '#3266bb' }
+        ];
+        for (const b of banners) {
+            const bp = cam.worldToScreen(MP_ARENA_WIDTH * b.tx, 0);
+            const top = bp.y - 110;
+            // Banner cloth (small flag)
+            ctx.fillStyle = b.color;
+            ctx.fillRect(bp.x - 14, top, 28, 36);
+            // Pointed bottom
+            ctx.beginPath();
+            ctx.moveTo(bp.x - 14, top + 36);
+            ctx.lineTo(bp.x, top + 46);
+            ctx.lineTo(bp.x + 14, top + 36);
+            ctx.closePath();
+            ctx.fill();
+            // Gold trim
+            ctx.fillStyle = '#FFD700';
+            ctx.fillRect(bp.x - 14, top + 30, 28, 2);
+            // Pole
+            ctx.strokeStyle = '#5a3a1a';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(bp.x, top - 4);
+            ctx.lineTo(bp.x, top + 46);
+            ctx.stroke();
+        }
+
+        // ---- Torches at the corners (animated flame) ----
+        for (let i = 0; i < corners.length; i++) {
+            const c = corners[i];
+            const flameY = c.y - 84;
+            const flicker = Math.sin(time * 12 + i * 1.7);
+            // Pole
+            ctx.strokeStyle = '#3a2010';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(c.x, c.y - 80);
+            ctx.lineTo(c.x, c.y - 70);
+            ctx.stroke();
+            // Bowl
+            ctx.fillStyle = '#5a3a1a';
+            ctx.beginPath();
+            ctx.ellipse(c.x, c.y - 80, 6, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // Flame
+            const flameH = 14 + flicker * 3;
+            const flameW = 6 + flicker * 1;
+            const fGrad = ctx.createRadialGradient(c.x, flameY - 4, 1, c.x, flameY - 4, flameH);
+            fGrad.addColorStop(0, '#FFFAA0');
+            fGrad.addColorStop(0.4, '#FF9930');
+            fGrad.addColorStop(1, 'rgba(255, 60, 0, 0)');
+            ctx.fillStyle = fGrad;
+            ctx.beginPath();
+            ctx.ellipse(c.x, flameY - 4, flameW, flameH, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // Glow on the surrounding stone
+            ctx.fillStyle = 'rgba(255, 150, 60, 0.12)';
+            ctx.beginPath();
+            ctx.arc(c.x, c.y - 70, 28, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // ---- Subtle center line (red sand line) ----
+        ctx.strokeStyle = 'rgba(160, 60, 60, 0.25)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        const topLine = cam.worldToScreen(MP_ARENA_WIDTH / 2, 0);
+        const botLine = cam.worldToScreen(MP_ARENA_WIDTH / 2, MP_ARENA_HEIGHT);
+        ctx.moveTo(topLine.x, topLine.y);
+        ctx.lineTo(botLine.x, botLine.y);
+        ctx.stroke();
+    }
+
+    renderMPFight() {
+        const ctx = this.ctx;
+        const cam = this._mpCamera;
+        if (!cam) return;
+
+        this._drawColiseum(ctx, cam);
 
         // Opponent stickman (alive: regular draw; dying: death animation)
         if (this.mpOpponent) {
