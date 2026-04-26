@@ -4115,36 +4115,51 @@ class Game {
 
     _drawMPPillar(ctx, cam, wx, wy) {
         const base = cam.worldToScreen(wx, wy);
-        const top = { x: base.x, y: base.y - 56 };
-        // Shadow on the floor
-        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        const top = { x: base.x, y: base.y - 64 };
+        // Shadow on the sand
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
         ctx.beginPath();
-        ctx.ellipse(base.x + 6, base.y + 4, 16, 7, 0, 0, Math.PI * 2);
+        ctx.ellipse(base.x + 6, base.y + 4, 18, 8, 0, 0, Math.PI * 2);
         ctx.fill();
-        // Column shaft
+        // Column shaft (warm stone, lighter on the lit side)
         const grad = ctx.createLinearGradient(top.x - 12, 0, top.x + 12, 0);
-        grad.addColorStop(0, '#4a3a55');
-        grad.addColorStop(0.5, '#7a6a85');
-        grad.addColorStop(1, '#3a2a45');
+        grad.addColorStop(0, '#9b7f4f');
+        grad.addColorStop(0.5, '#e0c585');
+        grad.addColorStop(1, '#7a5e34');
         ctx.fillStyle = grad;
-        ctx.fillRect(top.x - 11, top.y, 22, 56);
-        // Cap + base
-        ctx.fillStyle = '#5a4a65';
-        ctx.fillRect(top.x - 14, top.y - 6, 28, 8);
-        ctx.fillRect(top.x - 14, base.y - 4, 28, 6);
-        // Highlight
-        ctx.fillStyle = 'rgba(255,255,255,0.08)';
-        ctx.fillRect(top.x - 9, top.y + 2, 4, 50);
+        ctx.fillRect(top.x - 12, top.y, 24, 64);
+        // Vertical fluting lines for depth
+        ctx.strokeStyle = 'rgba(70, 50, 20, 0.35)';
+        ctx.lineWidth = 1;
+        for (let i = -8; i <= 8; i += 4) {
+            ctx.beginPath();
+            ctx.moveTo(top.x + i, top.y + 2);
+            ctx.lineTo(top.x + i, top.y + 62);
+            ctx.stroke();
+        }
+        // Capital + base (lighter limestone)
+        ctx.fillStyle = '#d4b884';
+        ctx.fillRect(top.x - 16, top.y - 8, 32, 9);
+        ctx.fillStyle = '#a88a52';
+        ctx.fillRect(top.x - 15, base.y - 5, 30, 6);
+        // Highlight stripe
+        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+        ctx.fillRect(top.x - 9, top.y + 2, 3, 58);
 
-        // Torch on top — tiny flickering flame
-        const flick = 0.7 + 0.3 * Math.sin(this.gameTime * 18 + wx);
-        ctx.fillStyle = `rgba(255, 180, 60, ${0.85 * flick})`;
+        // Torch on top — flickering flame
+        const flick = 0.75 + 0.25 * Math.sin(this.gameTime * 18 + wx);
+        ctx.fillStyle = `rgba(255, 140, 30, ${0.7 * flick})`;
         ctx.beginPath();
-        ctx.arc(top.x, top.y - 14, 6 * flick, 0, Math.PI * 2);
+        ctx.arc(top.x, top.y - 16, 9 * flick, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = `rgba(255, 230, 130, ${0.9 * flick})`;
+        ctx.fillStyle = `rgba(255, 220, 100, ${0.95 * flick})`;
         ctx.beginPath();
-        ctx.arc(top.x, top.y - 14, 3, 0, Math.PI * 2);
+        ctx.arc(top.x, top.y - 16, 4, 0, Math.PI * 2);
+        ctx.fill();
+        // Warm glow puddle on the sand
+        ctx.fillStyle = `rgba(255, 160, 60, ${0.10 * flick})`;
+        ctx.beginPath();
+        ctx.arc(base.x, base.y, 28, 0, Math.PI * 2);
         ctx.fill();
     }
 
@@ -4464,23 +4479,59 @@ class Game {
         const cam = this._mpCamera;
         if (!cam) return;
 
-        // Background gradient (dark sky behind the colosseum)
+        // ---- Sunset sky behind the coliseum ----
         const bg = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-        bg.addColorStop(0, '#100818');
-        bg.addColorStop(1, '#1a0f24');
+        bg.addColorStop(0, '#3a2840');
+        bg.addColorStop(0.45, '#7a3a3a');
+        bg.addColorStop(1, '#3a2424');
         ctx.fillStyle = bg;
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-        // Arena floor — a stone diamond drawn in iso. Rendered as a base
-        // fill plus a checker tile pattern + concentric rings around the
-        // center pad where weapon drops appear.
+        // ---- Stadium tiers (concentric warm-stone rings) ----
+        const scx = CANVAS_WIDTH / 2;
+        const scy = CANVAS_HEIGHT / 2;
+        const tiers = [
+            { rx: 760, ry: 540, color: '#6e4622' },
+            { rx: 700, ry: 490, color: '#84502a' },
+            { rx: 640, ry: 440, color: '#9c5e34' },
+            { rx: 580, ry: 390, color: '#b67442' },
+            { rx: 520, ry: 340, color: '#c8854a' }
+        ];
+        for (const t of tiers) {
+            ctx.fillStyle = t.color;
+            ctx.beginPath();
+            ctx.ellipse(scx, scy, t.rx, t.ry, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // ---- Crowd dots in the upper rim, gently bobbing ----
+        const time = this.gameTime || 0;
+        for (let i = 0; i < 90; i++) {
+            const angle = (i / 90) * Math.PI * 2;
+            const tier = tiers[1 + (i % 3)];
+            const r = tier.rx + 14;
+            const ry = tier.ry + 10;
+            const px = scx + Math.cos(angle) * r;
+            const py = scy + Math.sin(angle) * ry - 6;
+            // Skip dots in front of the arena (they'd cover the floor)
+            if (py > scy + 220) continue;
+            const bob = Math.sin(time * 4 + i * 0.7) * 1.5;
+            ctx.fillStyle = ['#FFD700', '#FF6644', '#44CCFF', '#FFFFFF', '#88FF88'][i % 5];
+            ctx.fillRect(px, py + bob, 3, 4);
+        }
+
+        // ---- Arena floor (sandy radial gradient) ----
         const corners = [
             cam.worldToScreen(0, 0),
             cam.worldToScreen(MP_ARENA_WIDTH, 0),
             cam.worldToScreen(MP_ARENA_WIDTH, MP_ARENA_HEIGHT),
             cam.worldToScreen(0, MP_ARENA_HEIGHT)
         ];
-        ctx.fillStyle = '#2c2336';
+        const sandGrad = ctx.createRadialGradient(scx, scy, 60, scx, scy, 520);
+        sandGrad.addColorStop(0, '#e7c178');
+        sandGrad.addColorStop(0.7, '#c8a058');
+        sandGrad.addColorStop(1, '#a07a3a');
+        ctx.fillStyle = sandGrad;
         ctx.beginPath();
         ctx.moveTo(corners[0].x, corners[0].y);
         for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
@@ -4506,7 +4557,7 @@ class Game {
                     cam.worldToScreen((c + 1) * tile, (r + 1) * tile),
                     cam.worldToScreen(c * tile, (r + 1) * tile)
                 ];
-                ctx.fillStyle = '#332940';
+                ctx.fillStyle = 'rgba(120, 80, 30, 0.25)';
                 ctx.beginPath();
                 ctx.moveTo(tc[0].x, tc[0].y);
                 ctx.lineTo(tc[1].x, tc[1].y);
@@ -4517,7 +4568,7 @@ class Game {
             }
         }
         // Subtle grid lines
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+        ctx.strokeStyle = 'rgba(80, 50, 15, 0.15)';
         ctx.lineWidth = 1;
         for (let c = 0; c <= cols; c++) {
             const a = cam.worldToScreen(c * tile, 0);
@@ -4567,17 +4618,44 @@ class Game {
         this._drawMPPillar(ctx, cam, 60, MP_ARENA_HEIGHT - 60);
         this._drawMPPillar(ctx, cam, MP_ARENA_WIDTH - 60, MP_ARENA_HEIGHT - 60);
 
-        // Wall outline (with thicker dark inner stroke for depth)
-        ctx.strokeStyle = '#000';
+        // Wall outline — dark base + warm stone top stripe for depth
+        ctx.strokeStyle = '#3a2210';
         ctx.lineWidth = 6;
         ctx.beginPath();
         ctx.moveTo(corners[0].x, corners[0].y);
         for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
         ctx.closePath();
         ctx.stroke();
-        ctx.strokeStyle = '#7a4d8a';
+        ctx.strokeStyle = '#8a5e30';
         ctx.lineWidth = 3;
         ctx.stroke();
+
+        // ---- Hanging banners along the back edge ----
+        const banners = [
+            { tx: 0.18, color: '#cc3322' },
+            { tx: 0.50, color: '#dca838' },
+            { tx: 0.82, color: '#3266bb' }
+        ];
+        for (const b of banners) {
+            const bp = cam.worldToScreen(MP_ARENA_WIDTH * b.tx, 0);
+            const top = bp.y - 110;
+            ctx.fillStyle = b.color;
+            ctx.fillRect(bp.x - 14, top, 28, 36);
+            ctx.beginPath();
+            ctx.moveTo(bp.x - 14, top + 36);
+            ctx.lineTo(bp.x, top + 46);
+            ctx.lineTo(bp.x + 14, top + 36);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = '#FFD700';
+            ctx.fillRect(bp.x - 14, top + 30, 28, 2);
+            ctx.strokeStyle = '#5a3a1a';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(bp.x, top - 4);
+            ctx.lineTo(bp.x, top + 46);
+            ctx.stroke();
+        }
 
         // Center weapon drops (under the fighters so they walk in front).
         for (const d of this.mpDrops) this._drawMPDrop(ctx, cam, d);
