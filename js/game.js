@@ -143,7 +143,7 @@ class Game {
             case 'POLAR_FIGHT': this.updatePolarFight(dt); break;
             case 'LAVA_FIGHT': this.updateLavaFight(dt); break;
             case 'WIN': break;
-            case 'LOSE': break;
+            case 'LOSE': this.updateLose(dt); break;
         }
     }
 
@@ -1581,7 +1581,13 @@ class Game {
             this.state = 'LOSE';
             this.music.stop();
             this.music.playSfx('player_death');
+            // Self-revive window: 10s if player is carrying a medkit
+            this._selfReviveTimer = (this.player.medkits || 0) > 0 ? 10 : 0;
         }
+    }
+
+    updateLose(dt) {
+        if (this._selfReviveTimer > 0) this._selfReviveTimer -= dt;
     }
 
     checkHazards(entity, dt) {
@@ -3701,10 +3707,98 @@ class Game {
         ctx.font = '20px Arial';
         ctx.fillText('You have fallen in battle.', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 30);
 
+        // Self-revive: countdown + button while timer is active and we still have a medkit.
+        const reviveActive = this._selfReviveTimer > 0 && (this.player.medkits || 0) > 0;
+        if (reviveActive) {
+            this.renderSelfReviveButton(ctx);
+        }
+
         this.renderStats(ctx);
         this.renderReplayButton(ctx);
         this.renderMenuButton(ctx);
         this.renderBackToEvanbbButton(ctx);
+    }
+
+    renderSelfReviveButton(ctx) {
+        // Sit just above the Play Again button (which is at y/2 + 155).
+        const cx = CANVAS_WIDTH / 2;
+        const yBase = CANVAS_HEIGHT / 2 + 100;
+
+        // Countdown timer label
+        const secsLeft = Math.max(0, this._selfReviveTimer);
+        ctx.fillStyle = '#FFD700';
+        ctx.font = 'bold 18px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Revive in ' + secsLeft.toFixed(1) + 's', cx, yBase - 12);
+
+        // Countdown ring
+        const ringX = cx - 110, ringY = yBase + 12;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(ringX, ringY, 14, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.strokeStyle = '#FF6666';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(ringX, ringY, 14, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (this._selfReviveTimer / 10));
+        ctx.stroke();
+
+        // Revive button
+        const bx = cx - 90, by = yBase, bw = 200, bh = 38;
+        const mx = this.input.mouseX, my = this.input.mouseY;
+        const hover = mx > bx && mx < bx + bw && my > by && my < by + bh;
+        ctx.fillStyle = hover ? '#66cc66' : '#44aa44';
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeStyle = '#88FF88';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx, by, bw, bh);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText('🩹 Revive Yourself (' + this.player.medkits + ')', cx + 10, by + 25);
+
+        // Click → revive and resume play
+        if (hover && this.input.mouseClicked) {
+            this.input.mouseClicked = false;
+            this._performSelfRevive();
+        }
+    }
+
+    _performSelfRevive() {
+        if ((this.player.medkits || 0) <= 0) return;
+        this.player.medkits--;
+        this.player.alive = true;
+        this.player.health = MEDKIT_REVIVE_HEALTH;
+        this.player.deathTimer = 0;
+        this._selfReviveTimer = 0;
+        this.state = 'PLAYING';
+        this.music.play('battle');
+        this.hud.notify('Revived!', '#44FF66', 2);
+        // Heal sparkles around the player
+        for (let i = 0; i < 16; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const sp = 40 + Math.random() * 40;
+            this.particles.push({
+                x: this.player.x, y: this.player.y - 10,
+                vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 30,
+                life: 0.9, maxLife: 0.9, size: 3, color: '#44FF66', alive: true,
+                update(dt) {
+                    this.x += this.vx * dt;
+                    this.y += this.vy * dt;
+                    this.vy += 90 * dt;
+                    this.life -= dt;
+                    if (this.life <= 0) this.alive = false;
+                },
+                draw(ctx, camera) {
+                    if (!camera.isVisible(this.x, this.y)) return;
+                    const p = camera.worldToScreen(this.x, this.y);
+                    ctx.globalAlpha = this.life / this.maxLife;
+                    ctx.fillStyle = this.color;
+                    ctx.fillRect(p.x - 1, p.y - 1, this.size, this.size);
+                    ctx.globalAlpha = 1;
+                }
+            });
+        }
     }
 
     renderStats(ctx) {
