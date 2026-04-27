@@ -82,26 +82,32 @@ class Crate {
 
 function createCrates() {
     return [
-        // Village: 4 Normal, 1 Silver
+        // Village: 4 Normal, 1 Silver, 1 Gold
         new Crate(300, 400, 'NORMAL'),
         new Crate(800, 300, 'NORMAL'),
         new Crate(1500, 600, 'NORMAL'),
         new Crate(1200, 1100, 'NORMAL'),
         new Crate(600, 900, 'SILVER'),
-        // Forest: 3 Normal, 2 Silver, 1 Gold
+        new Crate(1700, 1300, 'GOLD'),
+        // Forest: 3 Normal, 2 Silver, 2 Gold, 1 Diamond
         new Crate(2400, 300, 'NORMAL'),
         new Crate(2900, 800, 'NORMAL'),
         new Crate(3200, 400, 'NORMAL'),
         new Crate(2600, 1100, 'SILVER'),
         new Crate(3400, 1200, 'SILVER'),
         new Crate(3000, 600, 'GOLD'),
-        // Arctic: 1 Silver, 1 Gold
+        new Crate(3700, 800, 'GOLD'),
+        new Crate(2700, 700, 'DIAMOND'),
+        // Arctic: 1 Silver, 1 Gold, 1 Diamond
         new Crate(400, 2000, 'SILVER'),
         new Crate(900, 2400, 'GOLD'),
-        // Beach: 2 Normal, 1 Silver
+        new Crate(600, 2700, 'DIAMOND'),
+        // Beach: 2 Normal, 1 Silver, 1 Gold, 1 Diamond (near the water)
         new Crate(1600, 2000, 'NORMAL'),
         new Crate(2100, 2500, 'NORMAL'),
         new Crate(1900, 2200, 'SILVER'),
+        new Crate(1500, 2700, 'GOLD'),
+        new Crate(2200, 2300, 'DIAMOND'),
         // Volcano: 1 Silver, 1 Gold, 1 Diamond
         new Crate(3000, 2000, 'SILVER'),
         new Crate(3400, 2400, 'GOLD'),
