@@ -78,6 +78,12 @@ const WEAPON_DEFS = {
     CROSSBOW: { name: 'Crossbow', damage: 36, range: 300, cooldown: 600, type: 'ranged', projectileSpeed: 420, color: '#654321' },
     MAGIC_STAFF: { name: 'Magic Staff', damage: 46, range: 350, cooldown: 550, type: 'ranged', projectileSpeed: 300, color: '#9932CC', pierce: true },
     DIAMOND_SWORD: { name: 'Diamond Sword', damage: 56, range: 50, cooldown: 380, type: 'melee', color: '#00CED1' },
+    // Mid-tier brawler — three-shots a 100 HP enemy
+    MORNING_STAR: { name: 'Morning Star', damage: 35, range: 52, cooldown: 600, type: 'melee', color: '#A03030' },
+    // Diamond-tier elite weapons (rare and very strong)
+    DRAGON_BOW: { name: 'Dragon Bow', damage: 70, range: 380, cooldown: 550, type: 'ranged', projectileSpeed: 460, color: '#FF8800', pierce: true, burn: true },
+    THUNDER_HAMMER: { name: 'Thunder Hammer', damage: 85, range: 58, cooldown: 750, type: 'melee', color: '#FFEE44' },
+    SOUL_REAPER: { name: 'Soul Reaper', damage: 75, range: 60, cooldown: 480, type: 'melee', color: '#9966FF' },
     // Boss drops — all top-tier
     WEB_BOW: { name: 'Web Bow', damage: 60, range: 340, cooldown: 480, type: 'ranged', projectileSpeed: 420, color: '#CC44CC', pierce: true },
     GHOST_SWORD: { name: 'Ghost Sword', damage: 58, range: 55, cooldown: 420, type: 'melee', color: '#88CCFF' },
@@ -89,9 +95,9 @@ const WEAPON_DEFS = {
 // Crate tiers
 const CRATE_TIERS = {
     NORMAL: { name: 'Normal', cost: 10, color: '#8B4513', outline: '#6B3410', loot: ['DAGGER', 'CLUB', 'SLINGSHOT'] },
-    SILVER: { name: 'Silver', cost: 25, color: '#C0C0C0', outline: '#909090', loot: ['IRON_SWORD', 'SPEAR', 'SHORTBOW'] },
-    GOLD: { name: 'Gold', cost: 50, color: '#FFD700', outline: '#DAA520', loot: ['FIRE_SWORD', 'CROSSBOW'] },
-    DIAMOND: { name: 'Diamond', cost: 100, color: '#00FFFF', outline: '#00BFFF', loot: ['MAGIC_STAFF', 'DIAMOND_SWORD'] }
+    SILVER: { name: 'Silver', cost: 25, color: '#C0C0C0', outline: '#909090', loot: ['IRON_SWORD', 'SPEAR', 'SHORTBOW', 'MORNING_STAR'] },
+    GOLD: { name: 'Gold', cost: 50, color: '#FFD700', outline: '#DAA520', loot: ['FIRE_SWORD', 'CROSSBOW', 'MORNING_STAR'] },
+    DIAMOND: { name: 'Diamond', cost: 100, color: '#00FFFF', outline: '#00BFFF', loot: ['MAGIC_STAFF', 'DIAMOND_SWORD', 'DRAGON_BOW', 'THUNDER_HAMMER', 'SOUL_REAPER'] }
 };
 
 // AI config
