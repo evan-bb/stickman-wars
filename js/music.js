@@ -52,11 +52,27 @@ class MusicSystem {
             this.masterGain.gain.setValueAtTime(newVal, this.ctx.currentTime);
         }
 
-        // Schedule beats
-        while (this.nextBeatTime < this.ctx.currentTime + this.scheduleAhead) {
+        const now = this.ctx.currentTime;
+
+        // If we've fallen way behind (tab hidden, frame hitch, etc.), bail on
+        // the backlog and resync to "now". Otherwise the while loop dumps a
+        // flood of overdue beats all at once and the music glitches/screeches.
+        if (this.nextBeatTime < now - 0.3) {
+            // Snap forward, keeping beatIndex aligned to a bar boundary so the
+            // pattern stays consistent.
+            const skipBeats = Math.floor((now - this.nextBeatTime) / this.beatInterval);
+            this.beatIndex += skipBeats;
+            this.nextBeatTime += skipBeats * this.beatInterval;
+        }
+
+        // Cap how many beats we schedule per update so a long dt can't queue
+        // hundreds of overlapping notes.
+        let scheduled = 0;
+        while (this.nextBeatTime < now + this.scheduleAhead && scheduled < 32) {
             this.scheduleBeat(this.nextBeatTime, this.beatIndex);
             this.nextBeatTime += this.beatInterval;
             this.beatIndex++;
+            scheduled++;
         }
     }
 
