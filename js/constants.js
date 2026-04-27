@@ -253,6 +253,14 @@ const EMOTES = [
 const EMOTE_DURATION = 2.4;       // seconds the emote stays up
 const EMOTE_COOLDOWN = 0.8;       // anti-spam cooldown after one ends
 
+// Medkit / revive system
+const MEDKIT_COLLECT_RADIUS = 28;       // walk-over distance to pick up
+const MEDKIT_REVIVE_RADIUS = 60;        // how close you must be to revive a teammate
+const MEDKIT_REVIVE_HEALTH = 50;        // HP teammates wake up with
+const MEDKIT_REVIVE_WINDOW = 5;         // seconds a downed teammate stays revivable
+const MEDKIT_SPAWN_COUNT = 8;           // medkits scattered around the map at start
+const MEDKIT_RESPAWN_TIME = 35;         // seconds to respawn after pickup
+
 // 1v1 multiplayer arena
 const MP_ARENA_WIDTH = 1300;
 const MP_ARENA_HEIGHT = 800;

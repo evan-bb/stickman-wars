@@ -221,6 +221,64 @@ class WeaponPickup {
     }
 }
 
+// ============================================
+// Medkit Pickup
+// ============================================
+
+class MedkitPickup {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.collected = false;
+        this.bobTimer = Math.random() * Math.PI * 2;
+        this.radius = MEDKIT_COLLECT_RADIUS;
+    }
+
+    update(dt) {
+        this.bobTimer += dt * 2;
+    }
+
+    draw(ctx, camera) {
+        if (this.collected) return;
+        if (!camera.isVisible(this.x, this.y, 24)) return;
+        const pos = camera.worldToScreen(this.x, this.y);
+        const bob = Math.sin(this.bobTimer) * 3;
+
+        ctx.save();
+        // Soft red glow
+        const glow = 0.18 + Math.sin(this.bobTimer * 1.5) * 0.06;
+        ctx.fillStyle = `rgba(255, 80, 80, ${glow})`;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y + bob, 18, 0, Math.PI * 2);
+        ctx.fill();
+
+        // White box body
+        const w = 18, h = 14;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(pos.x - w / 2, pos.y + bob - h / 2, w, h);
+        ctx.strokeStyle = '#AA0000';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(pos.x - w / 2, pos.y + bob - h / 2, w, h);
+
+        // Red cross
+        ctx.fillStyle = '#CC2222';
+        ctx.fillRect(pos.x - 1.5, pos.y + bob - 5, 3, 10);
+        ctx.fillRect(pos.x - 5, pos.y + bob - 1.5, 10, 3);
+        ctx.restore();
+    }
+}
+
+function spawnMedkits(count, worldW, worldH) {
+    const arr = [];
+    for (let i = 0; i < count; i++) {
+        arr.push(new MedkitPickup(
+            randomRange(60, worldW - 60),
+            randomRange(60, worldH - 60)
+        ));
+    }
+    return arr;
+}
+
 function spawnSticks(count, worldW, worldH) {
     const sticks = [];
     for (let i = 0; i < count; i++) {

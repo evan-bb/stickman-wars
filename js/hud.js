@@ -60,6 +60,24 @@ class HUD {
         ctx.font = 'bold 14px Arial';
         ctx.fillText(`Sticks: ${player.sticks}`, hx, hy + 50);
 
+        // Medkit count
+        if (player.medkits && player.medkits > 0) {
+            // Mini white box w/ red cross
+            const mx = hx + 130, my = hy + 38;
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(mx, my, 14, 11);
+            ctx.strokeStyle = '#AA0000';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(mx, my, 14, 11);
+            ctx.fillStyle = '#CC2222';
+            ctx.fillRect(mx + 6, my + 2, 2, 7);
+            ctx.fillRect(mx + 3, my + 4.5, 8, 2);
+            ctx.fillStyle = '#FF8888';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('x' + player.medkits, mx + 18, hy + 50);
+        }
+
         // Inventory bar (bottom center)
         this.drawInventoryBar(ctx, player, input);
 

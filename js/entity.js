@@ -53,8 +53,12 @@ class Entity {
 
     die(killer) {
         this.alive = false;
-        this.deathTimer = 1.8;
-        this.deathMaxTimer = 1.8;
+        // Blue teammates (allies of the player) stay revivable for a longer window
+        // so the player has a chance to use a medkit on them.
+        const reviveable = this.team === TEAMS.BLUE && !this.isPlayer;
+        const window = reviveable ? (typeof MEDKIT_REVIVE_WINDOW !== 'undefined' ? MEDKIT_REVIVE_WINDOW : 5) : 1.8;
+        this.deathTimer = window;
+        this.deathMaxTimer = window;
         // Pick a fall direction (left or right based on last hit direction)
         this.fallDir = (this.vx >= 0) ? 1 : -1;
         if (killer && killer.alive) {

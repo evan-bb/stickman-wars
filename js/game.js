@@ -1111,7 +1111,10 @@ class Game {
         this.pickups = spawnSticks(STICK_SPAWN_COUNT, WORLD_WIDTH, WORLD_HEIGHT);
         this.food = spawnFood(FOOD_SPAWN_COUNT, WORLD_WIDTH, WORLD_HEIGHT);
         this.foodRespawnTimer = FOOD_RESPAWN_TIME;
+        this.medkits = spawnMedkits(MEDKIT_SPAWN_COUNT, WORLD_WIDTH, WORLD_HEIGHT);
+        this.medkitRespawnTimer = MEDKIT_RESPAWN_TIME;
         this.crates = createCrates();
+        this.player.medkits = 0;
 
         // Create boss (dormant)
         this.boss = new Boss(CAVE_WIDTH / 2, CAVE_HEIGHT / 2);
@@ -1386,6 +1389,29 @@ class Game {
             }
         }
 
+        // Medkit collection (player walks over to pick up)
+        for (const m of this.medkits) {
+            if (m.collected) continue;
+            m.update(dt);
+            if (distance(this.player.x, this.player.y, m.x, m.y) < MEDKIT_COLLECT_RADIUS) {
+                m.collected = true;
+                this.player.medkits = (this.player.medkits || 0) + 1;
+                this.hud.notify('+1 Medkit (' + this.player.medkits + ' total)', '#FF6666', 1.5);
+                if (this.music.playSfx) this.music.playSfx('pickup');
+            }
+        }
+        // Medkit respawn
+        this.medkitRespawnTimer -= dt;
+        if (this.medkitRespawnTimer <= 0) {
+            this.medkitRespawnTimer = MEDKIT_RESPAWN_TIME;
+            for (let i = 0; i < 3; i++) {
+                this.medkits.push(new MedkitPickup(
+                    randomRange(60, WORLD_WIDTH - 60),
+                    randomRange(60, WORLD_HEIGHT - 60)
+                ));
+            }
+        }
+
         // Drop sticks from dead entities
         for (const e of this.entities) {
             if (!e.alive && e.deathTimer > 0 && e.deathTimer - dt <= 0 && e.sticks > 0) {
@@ -1470,6 +1496,20 @@ class Game {
             this.player.interactTarget = 'volcano';
         }
 
+        // Check downed teammate revive
+        // Find a downed-but-revivable Blue teammate within reach.
+        if ((this.player.medkits || 0) > 0 && !this.player.interactTarget) {
+            for (const e of this.entities) {
+                if (e.isPlayer || e.team !== TEAMS.BLUE) continue;
+                if (e.alive) continue;
+                if (e.deathTimer <= 0) continue; // already fully dead
+                if (distance(this.player.x, this.player.y, e.x, e.y) > MEDKIT_REVIVE_RADIUS) continue;
+                this.player.interactPrompt = 'Press E to Revive Teammate (' + this.player.medkits + ' medkit' + (this.player.medkits === 1 ? '' : 's') + ')';
+                this.player.interactTarget = e; // entity is the target
+                break;
+            }
+        }
+
         // Handle E key interaction
         if (this.input.isKeyDown('e') && this.player.interactTarget) {
             if (this.player.interactTarget === 'cave') {
@@ -1486,6 +1526,42 @@ class Game {
                 const loot = this.player.interactTarget.open(this.player);
                 if (loot) {
                     this.hud.notify(`Got ${loot.name}! (Scroll or 1-${this.player.inventory.length} to switch)`, loot.color || '#FFD700', 3);
+                }
+            } else if (this.player.interactTarget && typeof this.player.interactTarget === 'object' && this.player.interactTarget.team === TEAMS.BLUE) {
+                // Revive a downed teammate
+                const t = this.player.interactTarget;
+                if (!t.alive && t.deathTimer > 0 && (this.player.medkits || 0) > 0) {
+                    t.alive = true;
+                    t.health = MEDKIT_REVIVE_HEALTH;
+                    t.deathTimer = 0;
+                    this.player.medkits--;
+                    this.hud.notify('Revived teammate!', '#44FF66', 2);
+                    if (this.music.playSfx) this.music.playSfx('pickup');
+                    // Spawn green heal sparkles
+                    for (let i = 0; i < 12; i++) {
+                        const a = Math.random() * Math.PI * 2;
+                        const sp = 40 + Math.random() * 40;
+                        this.particles.push({
+                            x: t.x, y: t.y - 10,
+                            vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 30,
+                            life: 0.8, maxLife: 0.8, size: 3, color: '#44FF66', alive: true,
+                            update(dt) {
+                                this.x += this.vx * dt;
+                                this.y += this.vy * dt;
+                                this.vy += 90 * dt;
+                                this.life -= dt;
+                                if (this.life <= 0) this.alive = false;
+                            },
+                            draw(ctx, camera) {
+                                if (!camera.isVisible(this.x, this.y)) return;
+                                const p = camera.worldToScreen(this.x, this.y);
+                                ctx.globalAlpha = this.life / this.maxLife;
+                                ctx.fillStyle = this.color;
+                                ctx.fillRect(p.x - 1, p.y - 1, this.size, this.size);
+                                ctx.globalAlpha = 1;
+                            }
+                        });
+                    }
                 }
             }
             this.input.keys['e'] = false; // consume
@@ -1765,6 +1841,33 @@ class Game {
         // Food
         for (const f of this.food) {
             if (!f.collected) f.draw(ctx, this.camera);
+        }
+
+        // Medkits
+        if (this.medkits) {
+            for (const m of this.medkits) {
+                if (!m.collected) m.draw(ctx, this.camera);
+            }
+        }
+
+        // Downed teammate "REVIVE" prompt above their head
+        for (const e of this.entities) {
+            if (e.isPlayer || e.team !== TEAMS.BLUE) continue;
+            if (e.alive || e.deathTimer <= 0) continue;
+            if (!this.camera.isVisible(e.x, e.y, 30)) continue;
+            const pos = this.camera.worldToScreen(e.x, e.y);
+            // Pulsing red cross marker so you can spot a downed friend
+            const pulse = 0.5 + 0.5 * Math.sin(this.gameTime * 4);
+            ctx.fillStyle = `rgba(255, 80, 80, ${0.55 + 0.25 * pulse})`;
+            ctx.fillRect(pos.x - 1.5, pos.y - 38, 3, 12);
+            ctx.fillRect(pos.x - 6, pos.y - 33, 12, 3);
+            // Time-left ring (pie chart)
+            const lifePct = e.deathTimer / e.deathMaxTimer;
+            ctx.strokeStyle = `rgba(255, 200, 200, ${0.5 * pulse + 0.3})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y - 30, 14, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lifePct);
+            ctx.stroke();
         }
 
         // Crates
