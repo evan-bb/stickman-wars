@@ -70,9 +70,9 @@ const LION_DEN_ENTRANCE = { x: 2000, y: 3500, radius: 55 };
 const LION_DEN_WIDTH = 800;
 const LION_DEN_HEIGHT = 600;
 
-// Ocean entrance from the beach edge near the water — moved closer to the
-// shore and given a larger radius so it's easier to find and step onto.
-const OCEAN_ENTRANCE = { x: 2000, y: 2620, radius: 90 };
+// Ocean entrance — right on the shoreline (the beach pushes you back
+// out of deep water, so the portal sits on dry sand at the water's edge).
+const OCEAN_ENTRANCE = { x: 2000, y: 2290, radius: 90 };
 // Ocean biome itself is an interior zone you can roam, with sea anemones
 // inside as boss entrances for Eric the Clownfish.
 const OCEAN_ZONE_WIDTH = 1100;
