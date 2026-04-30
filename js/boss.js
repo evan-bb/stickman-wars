@@ -1554,3 +1554,457 @@ class LavaBoss extends Entity {
         }
     }
 }
+
+// ============================================
+// Lion Boss - Jayden the Lion (savannah)
+// ============================================
+
+class LionBoss extends Entity {
+    constructor(x, y) {
+        super(x, y, TEAMS.NEUTRAL);
+        this.health = LION_BOSS_CONFIG.health;
+        this.maxHealth = LION_BOSS_CONFIG.health;
+        this.name = LION_BOSS_CONFIG.name;
+        this.speed = LION_BOSS_CONFIG.speed;
+        this.radius = 26;
+        this.phase = 1;
+        this.attackTimer = 2;
+        this.currentAttack = 'idle';
+        this.pounceTarget = null;
+        this.pounceTimer = 0;
+        this.pounceWindup = 0;
+        this.roarTimer = 0;
+        this.roarRadius = 0;
+        this.roarActive = false;
+        this.roarHit = false;
+        this.legPhase = 0;
+        this.tailPhase = 0;
+        this.maneShake = 0;
+        this.active = false;
+    }
+    activate() { this.active = true; this.attackTimer = 1.5; }
+    update(dt, player, projectiles, particles) {
+        if (!this.active || !this.alive) return;
+        super.update(dt);
+        this.legPhase += dt * 5;
+        this.tailPhase += dt * 3;
+        if (this.maneShake > 0) this.maneShake -= dt * 4;
+        if (this.health / this.maxHealth <= LION_BOSS_CONFIG.phase2Threshold && this.phase === 1) {
+            this.phase = 2;
+            this.speed = LION_BOSS_CONFIG.speed * 1.4;
+            this.maneShake = 1.5;
+            spawnHitParticles(particles, this.x, this.y, '#FFAA00', 16);
+        }
+        if (player && player.alive) this.facing = angleBetween(this.x, this.y, player.x, player.y);
+        if (this.pounceWindup > 0) {
+            this.pounceWindup -= dt;
+            this.maneShake = 0.3;
+            if (this.pounceWindup <= 0) {
+                this.currentAttack = 'pounce';
+                this.pounceTimer = 0.45;
+                this.pounceTarget = player ? { x: player.x, y: player.y } : null;
+            }
+            return;
+        }
+        if (this.currentAttack === 'pounce') {
+            this.pounceTimer -= dt;
+            if (this.pounceTarget) {
+                const angle = angleBetween(this.x, this.y, this.pounceTarget.x, this.pounceTarget.y);
+                this.x += Math.cos(angle) * LION_BOSS_CONFIG.pounceSpeed * dt;
+                this.y += Math.sin(angle) * LION_BOSS_CONFIG.pounceSpeed * dt;
+                this.x = clamp(this.x, 30, LION_DEN_WIDTH - 30);
+                this.y = clamp(this.y, 30, LION_DEN_HEIGHT - 30);
+            }
+            if (player && player.alive && distance(this.x, this.y, player.x, player.y) < this.radius + player.radius) {
+                player.takeDamage(LION_BOSS_CONFIG.damage, this);
+                spawnHitParticles(particles, player.x, player.y, '#FFAA00', 8);
+                particles.push(new DamageNumber(player.x, player.y - 10, LION_BOSS_CONFIG.damage, '#FF6600'));
+                const kbA = angleBetween(this.x, this.y, player.x, player.y);
+                player.x += Math.cos(kbA) * 24;
+                player.y += Math.sin(kbA) * 24;
+                this.pounceTimer = 0;
+            }
+            if (this.pounceTimer <= 0) {
+                this.currentAttack = 'idle';
+                this.attackTimer = this.phase === 2 ? 1.2 : 2.0;
+            }
+            return;
+        }
+        if (this.roarActive) {
+            this.roarRadius += dt * 220;
+            this.roarTimer -= dt;
+            if (player && player.alive && !this.roarHit) {
+                const d = distance(this.x, this.y, player.x, player.y);
+                if (d < this.roarRadius && d > this.roarRadius - 35) {
+                    const dmg = 18;
+                    player.takeDamage(dmg, this);
+                    spawnHitParticles(particles, player.x, player.y, '#FFAA00', 5);
+                    particles.push(new DamageNumber(player.x, player.y - 10, dmg, '#FFAA00'));
+                    this.roarHit = true;
+                }
+            }
+            if (this.roarTimer <= 0) {
+                this.roarActive = false;
+                this.roarRadius = 0;
+                this.roarHit = false;
+            }
+            return;
+        }
+        if (player && player.alive) {
+            const dist = distance(this.x, this.y, player.x, player.y);
+            if (dist > 60) {
+                this.x += Math.cos(this.facing) * this.speed * dt;
+                this.y += Math.sin(this.facing) * this.speed * dt;
+                this.vx = Math.cos(this.facing) * this.speed;
+                this.vy = Math.sin(this.facing) * this.speed;
+            }
+            this.x = clamp(this.x, 30, LION_DEN_WIDTH - 30);
+            this.y = clamp(this.y, 30, LION_DEN_HEIGHT - 30);
+        }
+        this.attackTimer -= dt;
+        if (this.attackTimer <= 0 && player && player.alive) this.chooseAttack(player, projectiles, particles);
+    }
+    chooseAttack(player, projectiles, particles) {
+        const dist = distance(this.x, this.y, player.x, player.y);
+        const roll = Math.random();
+        if (dist > 100 && roll < 0.55) {
+            this.pounceWindup = 0.45;
+            this.currentAttack = 'windup';
+            this.attackTimer = 2.5;
+        } else {
+            this.roarActive = true;
+            this.roarTimer = 0.7;
+            this.roarRadius = 0;
+            this.roarHit = false;
+            this.maneShake = 0.6;
+            this.attackTimer = this.phase === 2 ? 1.5 : 2.5;
+            spawnHitParticles(particles, this.x, this.y, '#FFCC44', 10);
+        }
+    }
+    draw(ctx, camera) {
+        if (!this.alive && this.deathTimer <= 0) return;
+        const pos = camera.worldToScreen(this.x, this.y);
+        let { x, y } = pos;
+        const isoFacing = worldAngleToIso(this.facing);
+        ctx.save();
+        if (!this.alive) ctx.globalAlpha = clamp(this.deathTimer / 0.5, 0, 1);
+        if (this.maneShake > 0) x += Math.sin(this.maneShake * 30) * 1.5;
+        // Body
+        ctx.fillStyle = '#d49a3a';
+        ctx.beginPath();
+        ctx.ellipse(x, y, 26, 18, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#e7b04e';
+        ctx.beginPath();
+        ctx.ellipse(x, y - 2, 22, 14, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Legs
+        ctx.fillStyle = '#bd862c';
+        const legPos = [
+            { a: isoFacing - 0.85, d: 18 },
+            { a: isoFacing + 0.85, d: 18 },
+            { a: isoFacing + Math.PI - 0.65, d: 16 },
+            { a: isoFacing + Math.PI + 0.65, d: 16 }
+        ];
+        for (let i = 0; i < 4; i++) {
+            const lp = legPos[i];
+            const phase = Math.sin(this.legPhase + i * 1.6) * 3;
+            const lx = x + Math.cos(lp.a) * lp.d;
+            const ly = y + Math.sin(lp.a) * lp.d * 0.7 + phase;
+            ctx.beginPath();
+            ctx.ellipse(lx, ly, 6, 4, lp.a, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // Tail
+        const tailDir = isoFacing + Math.PI;
+        const tx = x + Math.cos(tailDir) * 22;
+        const ty = y + Math.sin(tailDir) * 14;
+        const tWag = Math.sin(this.tailPhase) * 8;
+        ctx.strokeStyle = '#bd862c';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x + Math.cos(tailDir) * 14, y + Math.sin(tailDir) * 9);
+        ctx.lineTo(tx + tWag, ty);
+        ctx.stroke();
+        ctx.fillStyle = '#7a4a18';
+        ctx.beginPath();
+        ctx.arc(tx + tWag, ty, 3, 0, Math.PI * 2);
+        ctx.fill();
+        // Head
+        const headX = x + Math.cos(isoFacing) * 22;
+        const headY = y + Math.sin(isoFacing) * 16 - 4;
+        const maneR = 16 + (this.phase === 2 ? Math.sin(Date.now() / 200) * 1.5 : 0);
+        ctx.fillStyle = this.phase === 2 ? '#c93a18' : '#9b3e10';
+        ctx.beginPath();
+        ctx.arc(headX, headY, maneR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = this.phase === 2 ? '#dd4d22' : '#b14a14';
+        ctx.beginPath();
+        ctx.arc(headX, headY, maneR - 3, 0, Math.PI * 2);
+        ctx.fill();
+        // Spiky mane outline
+        ctx.strokeStyle = this.phase === 2 ? '#7a1a0a' : '#5a2d08';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 12; i++) {
+            const ma = (i / 12) * Math.PI * 2;
+            ctx.beginPath();
+            ctx.moveTo(headX + Math.cos(ma) * (maneR - 1), headY + Math.sin(ma) * (maneR - 1));
+            ctx.lineTo(headX + Math.cos(ma) * (maneR + 4), headY + Math.sin(ma) * (maneR + 4));
+            ctx.stroke();
+        }
+        // Face
+        ctx.fillStyle = '#e7b04e';
+        ctx.beginPath();
+        ctx.arc(headX, headY, 9, 0, Math.PI * 2);
+        ctx.fill();
+        // Snout
+        ctx.fillStyle = '#f3c66a';
+        ctx.beginPath();
+        ctx.ellipse(headX + Math.cos(isoFacing) * 6, headY + Math.sin(isoFacing) * 5, 5, 4, isoFacing, 0, Math.PI * 2);
+        ctx.fill();
+        // Nose
+        ctx.fillStyle = '#3a1a08';
+        ctx.beginPath();
+        ctx.arc(headX + Math.cos(isoFacing) * 9, headY + Math.sin(isoFacing) * 7, 2, 0, Math.PI * 2);
+        ctx.fill();
+        // Eyes
+        ctx.fillStyle = this.phase === 2 ? '#FF2200' : '#222';
+        if (this.phase === 2) { ctx.shadowColor = '#FF2200'; ctx.shadowBlur = 6; }
+        const eyePerp = isoFacing + Math.PI / 2;
+        ctx.beginPath();
+        ctx.arc(headX + Math.cos(eyePerp) * 3 + Math.cos(isoFacing) * 4, headY + Math.sin(eyePerp) * 2 - 2, 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(headX - Math.cos(eyePerp) * 3 + Math.cos(isoFacing) * 4, headY - Math.sin(eyePerp) * 2 - 2, 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        // Pounce wind-up indicator
+        if (this.pounceWindup > 0) {
+            ctx.strokeStyle = `rgba(255, 170, 0, ${this.pounceWindup})`;
+            ctx.lineWidth = 3;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.arc(x, y, 35, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+        // Roar ring
+        if (this.roarActive) {
+            const a = clamp(1 - this.roarRadius / LION_BOSS_CONFIG.roarRadius, 0, 0.7);
+            ctx.strokeStyle = `rgba(255, 170, 0, ${a})`;
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.arc(x, y, this.roarRadius * 0.8, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.fillStyle = `rgba(255, 220, 80, ${a * 0.9})`;
+            ctx.font = 'bold 18px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('ROAR!', x, y - 50);
+        }
+        ctx.restore();
+        if (this.alive) {
+            ctx.fillStyle = '#333';
+            ctx.fillRect(x - 30, y - 38, 60, 6);
+            const pct = this.health / this.maxHealth;
+            ctx.fillStyle = pct > 0.5 ? '#FFAA00' : '#FF4444';
+            ctx.fillRect(x - 30, y - 38, 60 * pct, 6);
+            ctx.strokeStyle = '#FFF';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x - 30, y - 38, 60, 6);
+            ctx.fillStyle = '#FFAA00';
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.name, x, y - 44);
+            if (this.phase === 2) {
+                ctx.fillStyle = '#FF2200';
+                ctx.font = '10px Arial';
+                ctx.fillText('FERAL', x, y - 54);
+            }
+        }
+    }
+}
+
+// ============================================
+// Clownfish Boss - Eric the Clownfish (ocean)
+// ============================================
+
+class ClownfishBoss extends Entity {
+    constructor(x, y) {
+        super(x, y, TEAMS.NEUTRAL);
+        this.health = CLOWN_BOSS_CONFIG.health;
+        this.maxHealth = CLOWN_BOSS_CONFIG.health;
+        this.name = CLOWN_BOSS_CONFIG.name;
+        this.speed = CLOWN_BOSS_CONFIG.speed;
+        this.radius = 22;
+        this.phase = 1;
+        this.attackTimer = 2;
+        this.currentAttack = 'idle';
+        this.dashTimer = 0;
+        this.dashTarget = null;
+        this.tailPhase = 0;
+        this.bobPhase = Math.random() * Math.PI * 2;
+        this.active = false;
+    }
+    activate() { this.active = true; this.attackTimer = 1.5; }
+    update(dt, player, projectiles, particles) {
+        if (!this.active || !this.alive) return;
+        super.update(dt);
+        this.tailPhase += dt * 8;
+        this.bobPhase += dt * 2.5;
+        if (this.health / this.maxHealth <= CLOWN_BOSS_CONFIG.phase2Threshold && this.phase === 1) {
+            this.phase = 2;
+            this.speed = CLOWN_BOSS_CONFIG.speed * 1.4;
+            spawnHitParticles(particles, this.x, this.y, '#FFAA00', 14);
+        }
+        if (player && player.alive) this.facing = angleBetween(this.x, this.y, player.x, player.y);
+        if (this.currentAttack === 'dash') {
+            this.dashTimer -= dt;
+            if (this.dashTarget) {
+                const angle = angleBetween(this.x, this.y, this.dashTarget.x, this.dashTarget.y);
+                this.x += Math.cos(angle) * CLOWN_BOSS_CONFIG.dashSpeed * dt;
+                this.y += Math.sin(angle) * CLOWN_BOSS_CONFIG.dashSpeed * dt;
+                this.x = clamp(this.x, 30, CLOWN_LAIR_WIDTH - 30);
+                this.y = clamp(this.y, 30, CLOWN_LAIR_HEIGHT - 30);
+                if (Math.random() < 0.4) spawnHitParticles(particles, this.x, this.y, '#88DDFF', 1);
+            }
+            if (player && player.alive && distance(this.x, this.y, player.x, player.y) < this.radius + player.radius) {
+                player.takeDamage(CLOWN_BOSS_CONFIG.damage, this);
+                spawnHitParticles(particles, player.x, player.y, '#FFAA00', 6);
+                particles.push(new DamageNumber(player.x, player.y - 10, CLOWN_BOSS_CONFIG.damage, '#FFAA00'));
+                const kbA = angleBetween(this.x, this.y, player.x, player.y);
+                player.x += Math.cos(kbA) * 18;
+                player.y += Math.sin(kbA) * 18;
+                this.dashTimer = 0;
+            }
+            if (this.dashTimer <= 0) {
+                this.currentAttack = 'idle';
+                this.attackTimer = this.phase === 2 ? 1.0 : 1.6;
+            }
+            return;
+        }
+        if (player && player.alive) {
+            const d = distance(this.x, this.y, player.x, player.y);
+            if (d > 90) {
+                this.x += Math.cos(this.facing) * this.speed * dt;
+                this.y += Math.sin(this.facing) * this.speed * dt;
+                this.vx = Math.cos(this.facing) * this.speed;
+                this.vy = Math.sin(this.facing) * this.speed;
+            }
+            this.x = clamp(this.x, 30, CLOWN_LAIR_WIDTH - 30);
+            this.y = clamp(this.y, 30, CLOWN_LAIR_HEIGHT - 30);
+        }
+        this.attackTimer -= dt;
+        if (this.attackTimer <= 0 && player && player.alive) this.chooseAttack(player, projectiles, particles);
+    }
+    chooseAttack(player, projectiles, particles) {
+        const roll = Math.random();
+        if (roll < 0.4) {
+            this.currentAttack = 'dash';
+            this.dashTimer = 0.5;
+            this.dashTarget = { x: player.x, y: player.y };
+            this.attackTimer = 2.5;
+        } else {
+            this.bubbleSpit(player, projectiles);
+            this.attackTimer = this.phase === 2 ? 0.9 : 1.5;
+        }
+    }
+    bubbleSpit(player, projectiles) {
+        const angle = angleBetween(this.x, this.y, player.x, player.y);
+        const w = { damage: 12, projectileSpeed: CLOWN_BOSS_CONFIG.bubbleSpeed, color: '#88DDFF', burn: false, pierce: false };
+        projectiles.push(new Projectile(this.x + Math.cos(angle) * 22, this.y + Math.sin(angle) * 22, angle, w, TEAMS.NEUTRAL, this));
+        if (this.phase === 2) {
+            projectiles.push(new Projectile(this.x, this.y, angle - 0.35, w, TEAMS.NEUTRAL, this));
+            projectiles.push(new Projectile(this.x, this.y, angle + 0.35, w, TEAMS.NEUTRAL, this));
+        }
+    }
+    draw(ctx, camera) {
+        if (!this.alive && this.deathTimer <= 0) return;
+        const pos = camera.worldToScreen(this.x, this.y);
+        let { x, y } = pos;
+        y += Math.sin(this.bobPhase) * 2;
+        const isoFacing = worldAngleToIso(this.facing);
+        ctx.save();
+        if (!this.alive) ctx.globalAlpha = clamp(this.deathTimer / 0.5, 0, 1);
+        // Bubble trail
+        for (let i = 0; i < 3; i++) {
+            const trailDir = isoFacing + Math.PI;
+            const bx = x + Math.cos(trailDir) * (10 + i * 6);
+            const by = y + Math.sin(trailDir) * (8 + i * 4);
+            ctx.fillStyle = `rgba(180, 230, 255, ${0.4 - i * 0.1})`;
+            ctx.beginPath();
+            ctx.arc(bx, by, 3 - i * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // Body
+        ctx.fillStyle = '#FF7A22';
+        ctx.beginPath();
+        ctx.ellipse(x, y, 22, 14, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#FF9B44';
+        ctx.beginPath();
+        ctx.ellipse(x, y - 2, 18, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // White stripes
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 4;
+        for (let i = -1; i <= 1; i++) {
+            ctx.beginPath();
+            ctx.moveTo(x + i * 7, y - 14);
+            ctx.lineTo(x + i * 7, y + 14);
+            ctx.stroke();
+        }
+        // Tail
+        const tailDir = isoFacing + Math.PI;
+        const tWag = Math.sin(this.tailPhase) * 6;
+        const txp = x + Math.cos(tailDir) * 22;
+        const typ = y + Math.sin(tailDir) * 14;
+        ctx.fillStyle = '#FF9B44';
+        ctx.beginPath();
+        ctx.moveTo(x + Math.cos(tailDir) * 14, y + Math.sin(tailDir) * 8);
+        ctx.lineTo(txp + tWag, typ - 8);
+        ctx.lineTo(txp - tWag, typ + 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // Eye
+        const eyeX = x + Math.cos(isoFacing) * 8;
+        const eyeY = y + Math.sin(isoFacing) * 6 - 3;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(eyeX, eyeY, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = this.phase === 2 ? '#FF0000' : '#222';
+        ctx.beginPath();
+        ctx.arc(eyeX + Math.cos(isoFacing) * 1.5, eyeY, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        // Mouth
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(x + Math.cos(isoFacing) * 14, y + Math.sin(isoFacing) * 8 + 2, 3, 0, Math.PI);
+        ctx.stroke();
+        ctx.restore();
+        if (this.alive) {
+            ctx.fillStyle = '#333';
+            ctx.fillRect(x - 30, y - 32, 60, 6);
+            const pct = this.health / this.maxHealth;
+            ctx.fillStyle = pct > 0.5 ? '#FF8844' : '#FF4444';
+            ctx.fillRect(x - 30, y - 32, 60 * pct, 6);
+            ctx.strokeStyle = '#FFF';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x - 30, y - 32, 60, 6);
+            ctx.fillStyle = '#FF8844';
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.name, x, y - 38);
+            if (this.phase === 2) {
+                ctx.fillStyle = '#FF2200';
+                ctx.font = '10px Arial';
+                ctx.fillText('STING!', x, y - 48);
+            }
+        }
+    }
+}

@@ -38,14 +38,14 @@ function worldRectToIsoDiamond(x, y, w, h) {
     ];
 }
 
-// Precomputed iso bounds for the full world (4000x3000)
-// World corners: (0,0), (4000,0), (4000,3000), (0,3000)
-// Iso:           (0,0), (4000,2000), (1000,3500), (-3000,1500)
+// Precomputed iso bounds for the full world (4000x4000 — savannah added at the south)
+// World corners: (0,0), (4000,0), (4000,4000), (0,4000)
+// Iso:           (0,0), (4000,2000), (0,4000), (-4000,2000)
 const ISO_WORLD_BOUNDS = {
-    minX: -3000,
+    minX: -4000,
     maxX: 4000,
     minY: 0,
-    maxY: 3500,
-    width: 7000,
-    height: 3500
+    maxY: 4000,
+    width: 8000,
+    height: 4000
 };

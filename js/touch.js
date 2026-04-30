@@ -207,7 +207,8 @@ class TouchControls {
     getFleeBtn() {
         const state = window.game && window.game.state;
         const inBossFight = state === 'BOSS_FIGHT' || state === 'GHOST_FIGHT' ||
-                            state === 'CRAB_FIGHT' || state === 'POLAR_FIGHT' || state === 'LAVA_FIGHT';
+                            state === 'CRAB_FIGHT' || state === 'POLAR_FIGHT' || state === 'LAVA_FIGHT' ||
+                            state === 'LION_FIGHT' || state === 'CLOWN_FIGHT' || state === 'OCEAN';
         if (!inBossFight) return null;
         return { x: CANVAS_WIDTH - 110, y: 12, w: 94, h: 32 };
     }

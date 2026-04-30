@@ -5,7 +5,7 @@
 const CANVAS_WIDTH = 1280;
 const CANVAS_HEIGHT = 720;
 const WORLD_WIDTH = 4000;
-const WORLD_HEIGHT = 3000;
+const WORLD_HEIGHT = 4000;       // extended south to fit the Savannah biome
 
 const TEAMS = { BLUE: 'blue', RED: 'red', NEUTRAL: 'neutral' };
 const TEAM_COLORS = { blue: '#4488FF', red: '#FF4444', neutral: '#AA44AA' };
@@ -18,7 +18,8 @@ const BIOME = {
     FOREST: 'forest',
     ARCTIC: 'arctic',
     BEACH: 'beach',
-    VOLCANO: 'volcano'
+    VOLCANO: 'volcano',
+    SAVANNAH: 'savannah'
 };
 
 const BIOME_COLORS = {
@@ -26,7 +27,8 @@ const BIOME_COLORS = {
     forest: '#2d5a1e',
     arctic: '#d4e8f0',
     beach: '#e8d5a3',
-    volcano: '#4a3a3a'
+    volcano: '#4a3a3a',
+    savannah: '#c9a64a'
 };
 
 const BIOME_LAYOUTS = [
@@ -34,7 +36,8 @@ const BIOME_LAYOUTS = [
     { type: BIOME.FOREST, x: 2000, y: 0, w: 2000, h: 1500 },
     { type: BIOME.ARCTIC, x: 0, y: 1500, w: 1333, h: 1500 },
     { type: BIOME.BEACH, x: 1333, y: 1500, w: 1333, h: 1500 },
-    { type: BIOME.VOLCANO, x: 2666, y: 1500, w: 1334, h: 1500 }
+    { type: BIOME.VOLCANO, x: 2666, y: 1500, w: 1334, h: 1500 },
+    { type: BIOME.SAVANNAH, x: 0, y: 3000, w: 4000, h: 1000 }
 ];
 
 // Cave entrance in Forest biome
@@ -61,6 +64,21 @@ const ICE_CASTLE_HEIGHT = 600;
 const VOLCANO_LAIR_ENTRANCE = { x: 3333, y: 2200, radius: 55 };
 const VOLCANO_LAIR_WIDTH = 800;
 const VOLCANO_LAIR_HEIGHT = 600;
+
+// Lion Den entrance (savannah biome) — Jayden the Lion
+const LION_DEN_ENTRANCE = { x: 2000, y: 3500, radius: 55 };
+const LION_DEN_WIDTH = 800;
+const LION_DEN_HEIGHT = 600;
+
+// Ocean entrance from the beach edge near the water
+const OCEAN_ENTRANCE = { x: 2000, y: 2950, radius: 60 };
+// Ocean biome itself is an interior zone you can roam, with sea anemones
+// inside as boss entrances for Eric the Clownfish.
+const OCEAN_ZONE_WIDTH = 1100;
+const OCEAN_ZONE_HEIGHT = 760;
+// Eric the Clownfish boss arena
+const CLOWN_LAIR_WIDTH = 800;
+const CLOWN_LAIR_HEIGHT = 600;
 
 // Weapon definitions
 const WEAPON_DEFS = {
@@ -89,7 +107,9 @@ const WEAPON_DEFS = {
     GHOST_SWORD: { name: 'Ghost Sword', damage: 58, range: 55, cooldown: 420, type: 'melee', color: '#88CCFF' },
     ICE_BOW: { name: 'Ice Bow', damage: 65, range: 340, cooldown: 480, type: 'ranged', projectileSpeed: 420, color: '#66DDFF', pierce: true },
     LAVA_SWORD: { name: 'Lava Sword', damage: 65, range: 50, cooldown: 420, type: 'melee', color: '#FF4400', burn: true },
-    SAND_SWORD: { name: 'Sand Sword', damage: 54, range: 52, cooldown: 400, type: 'melee', color: '#E8C070' }
+    SAND_SWORD: { name: 'Sand Sword', damage: 54, range: 52, cooldown: 400, type: 'melee', color: '#E8C070' },
+    LION_FANG: { name: 'Lion Fang', damage: 70, range: 55, cooldown: 380, type: 'melee', color: '#E0AA44' },
+    TIDE_TRIDENT: { name: 'Tide Trident', damage: 62, range: 320, cooldown: 460, type: 'ranged', projectileSpeed: 440, color: '#33CCEE', pierce: true }
 };
 
 // Crate tiers
@@ -160,6 +180,26 @@ const LAVA_BOSS_CONFIG = {
     magmaSpeed: 150,
     eruptionRadius: 120,
     burnDamage: 3,
+    phase2Threshold: 0.5
+};
+
+const LION_BOSS_CONFIG = {
+    name: 'Jayden the Lion',
+    health: 420,
+    damage: 20,
+    speed: 80,
+    pounceSpeed: 360,
+    roarRadius: 140,
+    phase2Threshold: 0.5
+};
+
+const CLOWN_BOSS_CONFIG = {
+    name: 'Eric the Clownfish',
+    health: 320,
+    damage: 14,
+    speed: 70,
+    bubbleSpeed: 200,
+    dashSpeed: 280,
     phase2Threshold: 0.5
 };
 

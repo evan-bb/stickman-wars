@@ -90,6 +90,10 @@ class Game {
         this.polarBoss = null;
         this.lavaDefeated = false;
         this.lavaBoss = null;
+        this.lionDefeated = false;
+        this.lionBoss = null;
+        this.clownDefeated = false;
+        this.clownBoss = null;
 
         // Storm system
         this.storm = {
@@ -142,6 +146,9 @@ class Game {
             case 'CRAB_FIGHT': this.updateCrabFight(dt); break;
             case 'POLAR_FIGHT': this.updatePolarFight(dt); break;
             case 'LAVA_FIGHT': this.updateLavaFight(dt); break;
+            case 'LION_FIGHT': this.updateLionFight(dt); break;
+            case 'OCEAN': this.updateOcean(dt); break;
+            case 'CLOWN_FIGHT': this.updateClownFight(dt); break;
             case 'WIN': break;
             case 'LOSE': this.updateLose(dt); break;
         }
@@ -165,6 +172,9 @@ class Game {
             case 'CRAB_FIGHT': this.renderCrabFight(); break;
             case 'POLAR_FIGHT': this.renderPolarFight(); break;
             case 'LAVA_FIGHT': this.renderLavaFight(); break;
+            case 'LION_FIGHT': this.renderLionFight(); break;
+            case 'OCEAN': this.renderOcean(); break;
+            case 'CLOWN_FIGHT': this.renderClownFight(); break;
             case 'WIN': this.renderPlaying(); this.renderWin(); break;
             case 'LOSE': this.renderPlaying(); this.renderLose(); break;
         }
@@ -1496,6 +1506,18 @@ class Game {
             this.player.interactTarget = 'volcano';
         }
 
+        // Check Lion Den entrance (savannah)
+        if (!this.lionDefeated && distance(this.player.x, this.player.y, LION_DEN_ENTRANCE.x, LION_DEN_ENTRANCE.y) < LION_DEN_ENTRANCE.radius) {
+            this.player.interactPrompt = "Press E to enter the Den (Boss: Jayden the Lion)";
+            this.player.interactTarget = 'liondan';
+        }
+
+        // Check Ocean dive point (beach edge) — leads to the ocean zone
+        if (distance(this.player.x, this.player.y, OCEAN_ENTRANCE.x, OCEAN_ENTRANCE.y) < OCEAN_ENTRANCE.radius) {
+            this.player.interactPrompt = 'Press E to dive into the Ocean';
+            this.player.interactTarget = 'ocean';
+        }
+
         // Check downed teammate revive
         // Find a downed-but-revivable Blue teammate within reach.
         if ((this.player.medkits || 0) > 0 && !this.player.interactTarget) {
@@ -1522,6 +1544,10 @@ class Game {
                 this.enterIceCastle();
             } else if (this.player.interactTarget === 'volcano') {
                 this.enterVolcanoLair();
+            } else if (this.player.interactTarget === 'liondan') {
+                this.enterLionDen();
+            } else if (this.player.interactTarget === 'ocean') {
+                this.enterOcean();
             } else if (this.player.interactTarget instanceof Crate) {
                 const loot = this.player.interactTarget.open(this.player);
                 if (loot) {
@@ -3504,6 +3530,595 @@ class Game {
         ctx.textBaseline = 'middle';
         ctx.fillText('✖ FLEE', bx + bw / 2, by + bh / 2);
         ctx.textBaseline = 'alphabetic';
+    }
+
+    // ==================== LION FIGHT (savannah) ====================
+
+    enterLionDen() {
+        this.inCave = true;
+        this.state = 'LION_FIGHT';
+        this.music.play('boss');
+        this.lionBoss = new LionBoss(LION_DEN_WIDTH / 2, 180);
+        this.lionBoss.activate();
+        this.player.x = LION_DEN_WIDTH / 2;
+        this.player.y = LION_DEN_HEIGHT - 80;
+        this.lionProjectiles = [];
+        this.lionParticles = [];
+        this.lionPickup = null;
+        this._lionCamera = this._makeRoomCamera(LION_DEN_WIDTH, LION_DEN_HEIGHT);
+    }
+
+    exitLionDen() {
+        this.inCave = false;
+        this.state = 'PLAYING';
+        this.music.play('battle');
+        this.player.x = LION_DEN_ENTRANCE.x;
+        this.player.y = LION_DEN_ENTRANCE.y + 60;
+    }
+
+    updateLionFight(dt) {
+        const cam = this._lionCamera || this._makeRoomCamera(LION_DEN_WIDTH, LION_DEN_HEIGHT);
+        this._lionCamera = cam;
+        let mx = 0, my = 0;
+        if (this.input.isKeyDown('w') || this.input.isKeyDown('arrowup'))    { mx -= 1; my -= 1; }
+        if (this.input.isKeyDown('s') || this.input.isKeyDown('arrowdown'))  { mx += 1; my += 1; }
+        if (this.input.isKeyDown('a') || this.input.isKeyDown('arrowleft'))  { mx -= 1; my += 1; }
+        if (this.input.isKeyDown('d') || this.input.isKeyDown('arrowright')) { mx += 1; my -= 1; }
+        const mLen = Math.sqrt(mx * mx + my * my);
+        if (mLen > 0) { mx /= mLen; my /= mLen; }
+        this.player.vx = mx * this.player.speed;
+        this.player.vy = my * this.player.speed;
+        this.player.x += this.player.vx * dt;
+        this.player.y += this.player.vy * dt;
+        this.player.x = clamp(this.player.x, 30, LION_DEN_WIDTH - 30);
+        this.player.y = clamp(this.player.y, 30, LION_DEN_HEIGHT - 30);
+        if (Math.abs(this.player.vx) > 1 || Math.abs(this.player.vy) > 1) {
+            this.player.moveFacing = Math.atan2(this.player.vy, this.player.vx);
+            this.player.walkTimer += dt;
+        }
+        const worldMouse = cam.screenToWorld(this.input.mouseX, this.input.mouseY);
+        this.player.facing = angleBetween(this.player.x, this.player.y, worldMouse.x, worldMouse.y);
+        for (let i = 1; i <= 9; i++) {
+            if (this.input.isKeyDown(i.toString())) { this.player.switchToSlot(i - 1); this.input.keys[i.toString()] = false; }
+        }
+        const scroll = this.input.consumeScroll();
+        if (scroll !== 0) this.player.cycleWeapon(scroll > 0 ? 1 : -1);
+        if (this.player.weaponSwitched) {
+            this.player.weaponSwitched = false;
+            if (this.player.weapon) this.hud.notify(`Switched to ${this.player.weapon.name}`, this.player.weapon.color, 1.2);
+        }
+        const lionEntities = [this.lionBoss];
+        if (this.player.weapon && (this.input.mouseDown || this.input.isKeyDown(' '))) {
+            this.player.weapon.attack(this.player, lionEntities, this.lionProjectiles, this.lionParticles);
+        }
+        for (const wpn of this.player.inventory) wpn.update(dt);
+        if (this.player.attackAnim > 0) { this.player.attackAnim -= dt * 4; if (this.player.attackAnim < 0) this.player.attackAnim = 0; }
+        this.lionBoss.update(dt, this.player, this.lionProjectiles, this.lionParticles);
+        for (const proj of this.lionProjectiles) {
+            proj.update(dt);
+            if (proj.team === TEAMS.NEUTRAL && this.player.alive) {
+                if (circleCollision(proj.x, proj.y, proj.radius, this.player.x, this.player.y, this.player.radius)) {
+                    this.player.takeDamage(proj.damage, this.lionBoss);
+                    spawnHitParticles(this.lionParticles, this.player.x, this.player.y, '#FFAA00', 5);
+                    this.lionParticles.push(new DamageNumber(this.player.x, this.player.y - 10, proj.damage, '#FFAA00'));
+                    proj.alive = false;
+                }
+            }
+            if (proj.team === TEAMS.BLUE && this.lionBoss.alive) {
+                if (circleCollision(proj.x, proj.y, proj.radius, this.lionBoss.x, this.lionBoss.y, this.lionBoss.radius)) {
+                    this.lionBoss.takeDamage(proj.damage, this.player);
+                    spawnHitParticles(this.lionParticles, this.lionBoss.x, this.lionBoss.y, '#FFAA00', 5);
+                    this.lionParticles.push(new DamageNumber(this.lionBoss.x, this.lionBoss.y - 10, proj.damage, '#FFD700'));
+                    proj.alive = false;
+                }
+            }
+        }
+        this.lionProjectiles = this.lionProjectiles.filter(p => p.alive);
+        for (const p of this.lionParticles) p.update(dt);
+        this.lionParticles = this.lionParticles.filter(p => p.alive || (p.life !== undefined && p.life > 0));
+        this.hud.update(dt);
+        if (this.input.isKeyDown('escape')) {
+            this.exitLionDen();
+            this.hud.notify('Fled the Lion Den!', '#FFAA00', 2);
+            this.input.keys['escape'] = false;
+            return;
+        }
+        if (!this.lionBoss.alive) {
+            if (!this.lionDefeated) {
+                this.lionDefeated = true;
+                this.player.sticks += 50;
+                this.player.addXP(XP_PER_BOSS);
+                this.hud.notify('Jayden defeated! Pick up the Lion Fang!', '#FFAA00', 3);
+                this.lionPickup = new WeaponPickup(LION_DEN_WIDTH / 2, LION_DEN_HEIGHT / 2, 'LION_FANG');
+            }
+            this._handleBossPickup('lionPickup', () => this.exitLionDen());
+        }
+        if (!this.player.alive) { this.state = 'LOSE'; this.music.stop(); this.music.playSfx('player_death'); }
+    }
+
+    renderLionFight() {
+        const ctx = this.ctx;
+        const cam = this._lionCamera || this._makeRoomCamera(LION_DEN_WIDTH, LION_DEN_HEIGHT);
+        // Background
+        ctx.fillStyle = '#1a1208';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        // Sandy/dirt floor
+        const corners = [
+            cam.worldToScreen(0, 0),
+            cam.worldToScreen(LION_DEN_WIDTH, 0),
+            cam.worldToScreen(LION_DEN_WIDTH, LION_DEN_HEIGHT),
+            cam.worldToScreen(0, LION_DEN_HEIGHT)
+        ];
+        ctx.fillStyle = '#a47a3a';
+        ctx.beginPath();
+        ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
+        ctx.closePath();
+        ctx.fill();
+        // Stone walls
+        ctx.fillStyle = '#5a3a1a';
+        const tl = cam.worldToScreen(0, 0);
+        const tr = cam.worldToScreen(LION_DEN_WIDTH, 0);
+        ctx.fillRect(Math.min(tl.x, tr.x), Math.min(tl.y, tr.y) - 50, Math.abs(tr.x - tl.x), 50);
+        // Scattered bones for vibe
+        ctx.fillStyle = '#e8e0c8';
+        for (let i = 0; i < 8; i++) {
+            const bx = Math.sin(i * 4.1) * LION_DEN_WIDTH * 0.4 + LION_DEN_WIDTH / 2;
+            const by = Math.cos(i * 2.7) * LION_DEN_HEIGHT * 0.4 + LION_DEN_HEIGHT / 2;
+            const sp = cam.worldToScreen(bx, by);
+            ctx.beginPath();
+            ctx.ellipse(sp.x, sp.y, 8, 2.5, i, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        if (this.lionBoss.alive || this.lionBoss.deathTimer > 0) this.lionBoss.draw(ctx, cam);
+        drawStickman(ctx, this.player, cam);
+        for (const proj of this.lionProjectiles) proj.draw(ctx, cam);
+        for (const p of this.lionParticles) p.draw(ctx, cam);
+        if (this.lionPickup && !this.lionPickup.collected) this.lionPickup.draw(ctx, cam);
+        // Vignette
+        const vig = ctx.createRadialGradient(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.3, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.7);
+        vig.addColorStop(0, 'rgba(0,0,0,0)');
+        vig.addColorStop(1, 'rgba(0,0,0,0.5)');
+        ctx.fillStyle = vig;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        if (this.lionBoss.alive) {
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(CANVAS_WIDTH / 2 - 130, 10, 260, 30);
+            ctx.fillStyle = '#FFAA00';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Jayden the Lion', CANVAS_WIDTH / 2, 32);
+        }
+        const phx = CANVAS_WIDTH / 2 - 100, phy = CANVAS_HEIGHT - 40;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(phx, phy, 200, 16);
+        const phpct = this.player.health / this.player.maxHealth;
+        ctx.fillStyle = phpct > 0.5 ? '#44CC44' : phpct > 0.25 ? '#CCCC44' : '#CC4444';
+        ctx.fillRect(phx, phy, 200 * phpct, 16);
+        ctx.strokeStyle = '#FFF';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(phx, phy, 200, 16);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`HP: ${Math.ceil(this.player.health)} / ${this.player.maxHealth}`, CANVAS_WIDTH / 2, phy + 13);
+        this.hud.drawInventoryBar(ctx, this.player, this.input);
+        if (this.player.weapon) {
+            ctx.fillStyle = this.player.weapon.color;
+            ctx.font = 'bold 13px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.player.weapon.name, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 78);
+        }
+        this._drawFleeButton(ctx);
+    }
+
+    // ==================== OCEAN ZONE (entered from beach) ====================
+
+    enterOcean() {
+        this.inCave = true;
+        this.state = 'OCEAN';
+        this.music.play('boss');
+        this.player.x = OCEAN_ZONE_WIDTH / 2;
+        this.player.y = OCEAN_ZONE_HEIGHT - 80;
+        this._oceanCamera = this._makeRoomCamera(OCEAN_ZONE_WIDTH, OCEAN_ZONE_HEIGHT);
+        // Sea anemones — one is the boss entrance, others decorative
+        this.oceanAnemones = [
+            { x: 200, y: 200, boss: false },
+            { x: OCEAN_ZONE_WIDTH - 200, y: 220, boss: false },
+            { x: OCEAN_ZONE_WIDTH / 2, y: 200, boss: true }   // Eric's anemone
+        ];
+        this.oceanFishPhase = 0;
+    }
+
+    exitOcean() {
+        this.inCave = false;
+        this.state = 'PLAYING';
+        this.music.play('battle');
+        this.player.x = OCEAN_ENTRANCE.x;
+        this.player.y = OCEAN_ENTRANCE.y - 60;
+    }
+
+    updateOcean(dt) {
+        const cam = this._oceanCamera;
+        this.oceanFishPhase += dt;
+        let mx = 0, my = 0;
+        if (this.input.isKeyDown('w') || this.input.isKeyDown('arrowup'))    { mx -= 1; my -= 1; }
+        if (this.input.isKeyDown('s') || this.input.isKeyDown('arrowdown'))  { mx += 1; my += 1; }
+        if (this.input.isKeyDown('a') || this.input.isKeyDown('arrowleft'))  { mx -= 1; my += 1; }
+        if (this.input.isKeyDown('d') || this.input.isKeyDown('arrowright')) { mx += 1; my -= 1; }
+        const mLen = Math.sqrt(mx * mx + my * my);
+        if (mLen > 0) { mx /= mLen; my /= mLen; }
+        // Swim a bit slower in water
+        this.player.vx = mx * this.player.speed * 0.8;
+        this.player.vy = my * this.player.speed * 0.8;
+        this.player.x += this.player.vx * dt;
+        this.player.y += this.player.vy * dt;
+        this.player.x = clamp(this.player.x, 30, OCEAN_ZONE_WIDTH - 30);
+        this.player.y = clamp(this.player.y, 30, OCEAN_ZONE_HEIGHT - 30);
+        if (Math.abs(this.player.vx) > 1 || Math.abs(this.player.vy) > 1) {
+            this.player.moveFacing = Math.atan2(this.player.vy, this.player.vx);
+            this.player.walkTimer += dt;
+        }
+        const worldMouse = cam.screenToWorld(this.input.mouseX, this.input.mouseY);
+        this.player.facing = angleBetween(this.player.x, this.player.y, worldMouse.x, worldMouse.y);
+
+        // Check anemone proximity for boss entry
+        this.player.interactPrompt = '';
+        this.player.interactTarget = null;
+        for (const a of this.oceanAnemones) {
+            if (a.boss && this.clownDefeated) continue;
+            if (distance(this.player.x, this.player.y, a.x, a.y) < 50) {
+                if (a.boss) {
+                    this.player.interactPrompt = "Press E to fight Eric the Clownfish";
+                    this.player.interactTarget = 'clown';
+                } else {
+                    this.player.interactPrompt = 'Just an anemone';
+                }
+                break;
+            }
+        }
+        if (this.input.isKeyDown('e') && this.player.interactTarget === 'clown') {
+            this.input.keys['e'] = false;
+            this.enterClownLair();
+            return;
+        }
+        if (this.input.isKeyDown('escape')) {
+            this.input.keys['escape'] = false;
+            this.exitOcean();
+            this.hud.notify('Surfaced from the Ocean!', '#88DDFF', 2);
+            return;
+        }
+        this.hud.update(dt);
+    }
+
+    renderOcean() {
+        const ctx = this.ctx;
+        const cam = this._oceanCamera;
+        // Watery background gradient
+        const bg = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+        bg.addColorStop(0, '#0a3a5a');
+        bg.addColorStop(1, '#062a44');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        // Ocean floor (sandy)
+        const corners = [
+            cam.worldToScreen(0, 0),
+            cam.worldToScreen(OCEAN_ZONE_WIDTH, 0),
+            cam.worldToScreen(OCEAN_ZONE_WIDTH, OCEAN_ZONE_HEIGHT),
+            cam.worldToScreen(0, OCEAN_ZONE_HEIGHT)
+        ];
+        ctx.fillStyle = '#3a6a8a';
+        ctx.beginPath();
+        ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
+        ctx.closePath();
+        ctx.fill();
+        // Caustic light shimmers
+        const time = Date.now() / 1000;
+        ctx.strokeStyle = 'rgba(180, 230, 255, 0.18)';
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 12; i++) {
+            const cx = ((i / 12) * OCEAN_ZONE_WIDTH + Math.sin(time + i) * 20);
+            const cy = ((i % 4) * OCEAN_ZONE_HEIGHT / 4 + Math.cos(time * 0.7 + i) * 12);
+            const sp = cam.worldToScreen(cx, cy);
+            ctx.beginPath();
+            ctx.ellipse(sp.x, sp.y, 28, 6, 0, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        // Bubbles drifting up
+        for (let i = 0; i < 16; i++) {
+            const bx = ((i * 73) % OCEAN_ZONE_WIDTH);
+            const by = ((time * 30 + i * 100) % OCEAN_ZONE_HEIGHT);
+            const sp = cam.worldToScreen(bx, OCEAN_ZONE_HEIGHT - by);
+            ctx.fillStyle = 'rgba(180, 220, 255, 0.4)';
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, 2 + (i % 3), 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // Decorative little fish
+        for (let i = 0; i < 6; i++) {
+            const fx = ((this.oceanFishPhase * 30 + i * 200) % (OCEAN_ZONE_WIDTH + 100)) - 50;
+            const fy = OCEAN_ZONE_HEIGHT * (0.3 + 0.1 * (i % 3));
+            const fp = cam.worldToScreen(fx, fy);
+            ctx.fillStyle = ['#FFEE66', '#88CCFF', '#FF7733'][i % 3];
+            ctx.beginPath();
+            ctx.ellipse(fp.x, fp.y, 6, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#222';
+            ctx.beginPath();
+            ctx.arc(fp.x + 4, fp.y - 1, 0.7, 0, Math.PI * 2);
+            ctx.fill();
+            // Tail
+            ctx.beginPath();
+            ctx.moveTo(fp.x - 6, fp.y);
+            ctx.lineTo(fp.x - 10, fp.y - 3);
+            ctx.lineTo(fp.x - 10, fp.y + 3);
+            ctx.closePath();
+            ctx.fill();
+        }
+        // Wall outline
+        ctx.strokeStyle = '#0a2840';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
+        ctx.closePath();
+        ctx.stroke();
+        // Anemones
+        for (const a of this.oceanAnemones) {
+            if (a.boss && this.clownDefeated) continue;
+            const sp = cam.worldToScreen(a.x, a.y);
+            const wave = Math.sin(time * 2 + a.x * 0.01);
+            ctx.fillStyle = a.boss ? '#dd2266' : '#cc4477';
+            ctx.beginPath();
+            ctx.ellipse(sp.x, sp.y + 6, 22, 9, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = a.boss ? '#ff66bb' : '#ee5588';
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            for (let i = -4; i <= 4; i++) {
+                const sway = wave * 4 + i * 0.5;
+                ctx.beginPath();
+                ctx.moveTo(sp.x + i * 4, sp.y + 4);
+                ctx.lineTo(sp.x + i * 4 + sway, sp.y - 22);
+                ctx.stroke();
+            }
+            if (a.boss) {
+                ctx.fillStyle = '#FFD700';
+                ctx.font = 'bold 11px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText("ERIC'S ANEMONE", sp.x, sp.y + 26);
+                ctx.fillStyle = '#FFAA66';
+                ctx.font = '9px Arial';
+                ctx.fillText('Press E to fight', sp.x, sp.y + 38);
+            }
+        }
+        // Player
+        drawStickman(ctx, this.player, cam);
+        // Vignette
+        const vig = ctx.createRadialGradient(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.3, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.7);
+        vig.addColorStop(0, 'rgba(0,0,0,0)');
+        vig.addColorStop(1, 'rgba(0, 30, 60, 0.5)');
+        ctx.fillStyle = vig;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        // Title bar
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(CANVAS_WIDTH / 2 - 110, 10, 220, 30);
+        ctx.fillStyle = '#88DDFF';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('🌊 Ocean Biome', CANVAS_WIDTH / 2, 32);
+        // Interact prompt
+        if (this.player.interactPrompt) {
+            ctx.fillStyle = '#FFD700';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.player.interactPrompt, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 40);
+        }
+        // ESC hint
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.font = '11px Arial';
+        ctx.fillText('Press ESC to surface', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 12);
+        this._drawFleeButton(ctx);
+    }
+
+    // ==================== CLOWNFISH FIGHT ====================
+
+    enterClownLair() {
+        this.state = 'CLOWN_FIGHT';
+        this.music.play('boss');
+        this.clownBoss = new ClownfishBoss(CLOWN_LAIR_WIDTH / 2, 180);
+        this.clownBoss.activate();
+        this.player.x = CLOWN_LAIR_WIDTH / 2;
+        this.player.y = CLOWN_LAIR_HEIGHT - 80;
+        this.clownProjectiles = [];
+        this.clownParticles = [];
+        this.clownPickup = null;
+        this._clownCamera = this._makeRoomCamera(CLOWN_LAIR_WIDTH, CLOWN_LAIR_HEIGHT);
+    }
+
+    exitClownLair() {
+        // Return to ocean zone (not directly to beach) so player can explore again
+        this.state = 'OCEAN';
+        this.music.play('boss');
+        this.player.x = OCEAN_ZONE_WIDTH / 2;
+        this.player.y = OCEAN_ZONE_HEIGHT - 80;
+    }
+
+    updateClownFight(dt) {
+        const cam = this._clownCamera || this._makeRoomCamera(CLOWN_LAIR_WIDTH, CLOWN_LAIR_HEIGHT);
+        this._clownCamera = cam;
+        let mx = 0, my = 0;
+        if (this.input.isKeyDown('w') || this.input.isKeyDown('arrowup'))    { mx -= 1; my -= 1; }
+        if (this.input.isKeyDown('s') || this.input.isKeyDown('arrowdown'))  { mx += 1; my += 1; }
+        if (this.input.isKeyDown('a') || this.input.isKeyDown('arrowleft'))  { mx -= 1; my += 1; }
+        if (this.input.isKeyDown('d') || this.input.isKeyDown('arrowright')) { mx += 1; my -= 1; }
+        const mLen = Math.sqrt(mx * mx + my * my);
+        if (mLen > 0) { mx /= mLen; my /= mLen; }
+        this.player.vx = mx * this.player.speed * 0.85;
+        this.player.vy = my * this.player.speed * 0.85;
+        this.player.x += this.player.vx * dt;
+        this.player.y += this.player.vy * dt;
+        this.player.x = clamp(this.player.x, 30, CLOWN_LAIR_WIDTH - 30);
+        this.player.y = clamp(this.player.y, 30, CLOWN_LAIR_HEIGHT - 30);
+        if (Math.abs(this.player.vx) > 1 || Math.abs(this.player.vy) > 1) {
+            this.player.moveFacing = Math.atan2(this.player.vy, this.player.vx);
+            this.player.walkTimer += dt;
+        }
+        const worldMouse = cam.screenToWorld(this.input.mouseX, this.input.mouseY);
+        this.player.facing = angleBetween(this.player.x, this.player.y, worldMouse.x, worldMouse.y);
+        for (let i = 1; i <= 9; i++) {
+            if (this.input.isKeyDown(i.toString())) { this.player.switchToSlot(i - 1); this.input.keys[i.toString()] = false; }
+        }
+        const scroll = this.input.consumeScroll();
+        if (scroll !== 0) this.player.cycleWeapon(scroll > 0 ? 1 : -1);
+        if (this.player.weaponSwitched) {
+            this.player.weaponSwitched = false;
+            if (this.player.weapon) this.hud.notify(`Switched to ${this.player.weapon.name}`, this.player.weapon.color, 1.2);
+        }
+        const clownEntities = [this.clownBoss];
+        if (this.player.weapon && (this.input.mouseDown || this.input.isKeyDown(' '))) {
+            this.player.weapon.attack(this.player, clownEntities, this.clownProjectiles, this.clownParticles);
+        }
+        for (const wpn of this.player.inventory) wpn.update(dt);
+        if (this.player.attackAnim > 0) { this.player.attackAnim -= dt * 4; if (this.player.attackAnim < 0) this.player.attackAnim = 0; }
+        this.clownBoss.update(dt, this.player, this.clownProjectiles, this.clownParticles);
+        for (const proj of this.clownProjectiles) {
+            proj.update(dt);
+            if (proj.team === TEAMS.NEUTRAL && this.player.alive) {
+                if (circleCollision(proj.x, proj.y, proj.radius, this.player.x, this.player.y, this.player.radius)) {
+                    this.player.takeDamage(proj.damage, this.clownBoss);
+                    spawnHitParticles(this.clownParticles, this.player.x, this.player.y, '#88DDFF', 5);
+                    this.clownParticles.push(new DamageNumber(this.player.x, this.player.y - 10, proj.damage, '#88DDFF'));
+                    proj.alive = false;
+                }
+            }
+            if (proj.team === TEAMS.BLUE && this.clownBoss.alive) {
+                if (circleCollision(proj.x, proj.y, proj.radius, this.clownBoss.x, this.clownBoss.y, this.clownBoss.radius)) {
+                    this.clownBoss.takeDamage(proj.damage, this.player);
+                    spawnHitParticles(this.clownParticles, this.clownBoss.x, this.clownBoss.y, '#FF8844', 5);
+                    this.clownParticles.push(new DamageNumber(this.clownBoss.x, this.clownBoss.y - 10, proj.damage, '#FFAA44'));
+                    proj.alive = false;
+                }
+            }
+        }
+        this.clownProjectiles = this.clownProjectiles.filter(p => p.alive);
+        for (const p of this.clownParticles) p.update(dt);
+        this.clownParticles = this.clownParticles.filter(p => p.alive || (p.life !== undefined && p.life > 0));
+        this.hud.update(dt);
+        if (this.input.isKeyDown('escape')) {
+            this.exitClownLair();
+            this.hud.notify('Fled the Clownfish lair!', '#88DDFF', 2);
+            this.input.keys['escape'] = false;
+            return;
+        }
+        if (!this.clownBoss.alive) {
+            if (!this.clownDefeated) {
+                this.clownDefeated = true;
+                this.player.sticks += 50;
+                this.player.addXP(XP_PER_BOSS);
+                this.hud.notify('Eric defeated! Pick up the Tide Trident!', '#33CCEE', 3);
+                this.clownPickup = new WeaponPickup(CLOWN_LAIR_WIDTH / 2, CLOWN_LAIR_HEIGHT / 2, 'TIDE_TRIDENT');
+            }
+            this._handleBossPickup('clownPickup', () => this.exitClownLair());
+        }
+        if (!this.player.alive) { this.state = 'LOSE'; this.music.stop(); this.music.playSfx('player_death'); }
+    }
+
+    renderClownFight() {
+        const ctx = this.ctx;
+        const cam = this._clownCamera || this._makeRoomCamera(CLOWN_LAIR_WIDTH, CLOWN_LAIR_HEIGHT);
+        const bg = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+        bg.addColorStop(0, '#062842');
+        bg.addColorStop(1, '#031828');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        const corners = [
+            cam.worldToScreen(0, 0),
+            cam.worldToScreen(CLOWN_LAIR_WIDTH, 0),
+            cam.worldToScreen(CLOWN_LAIR_WIDTH, CLOWN_LAIR_HEIGHT),
+            cam.worldToScreen(0, CLOWN_LAIR_HEIGHT)
+        ];
+        ctx.fillStyle = '#2a5a78';
+        ctx.beginPath();
+        ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
+        ctx.closePath();
+        ctx.fill();
+        // Coral decorations
+        const time = Date.now() / 1000;
+        const coralSpots = [[80, 80], [CLOWN_LAIR_WIDTH - 80, 80], [80, CLOWN_LAIR_HEIGHT - 80], [CLOWN_LAIR_WIDTH - 80, CLOWN_LAIR_HEIGHT - 80]];
+        for (const [cx, cy] of coralSpots) {
+            const sp = cam.worldToScreen(cx, cy);
+            ctx.fillStyle = '#ff5599';
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y - 8, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#ff77aa';
+            ctx.lineWidth = 3;
+            for (let i = -2; i <= 2; i++) {
+                ctx.beginPath();
+                ctx.moveTo(sp.x + i * 3, sp.y);
+                ctx.lineTo(sp.x + i * 3 + Math.sin(time + i) * 3, sp.y - 18);
+                ctx.stroke();
+            }
+        }
+        // Bubble particles
+        for (let i = 0; i < 20; i++) {
+            const bx = ((i * 53) % CLOWN_LAIR_WIDTH);
+            const by = ((time * 40 + i * 100) % CLOWN_LAIR_HEIGHT);
+            const sp = cam.worldToScreen(bx, CLOWN_LAIR_HEIGHT - by);
+            ctx.fillStyle = 'rgba(180, 220, 255, 0.5)';
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.strokeStyle = '#0a2840';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
+        ctx.closePath();
+        ctx.stroke();
+        if (this.clownBoss.alive || this.clownBoss.deathTimer > 0) this.clownBoss.draw(ctx, cam);
+        drawStickman(ctx, this.player, cam);
+        for (const proj of this.clownProjectiles) proj.draw(ctx, cam);
+        for (const p of this.clownParticles) p.draw(ctx, cam);
+        if (this.clownPickup && !this.clownPickup.collected) this.clownPickup.draw(ctx, cam);
+        const vig = ctx.createRadialGradient(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.3, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.7);
+        vig.addColorStop(0, 'rgba(0,0,0,0)');
+        vig.addColorStop(1, 'rgba(0, 30, 60, 0.55)');
+        ctx.fillStyle = vig;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        if (this.clownBoss.alive) {
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(CANVAS_WIDTH / 2 - 130, 10, 260, 30);
+            ctx.fillStyle = '#FF8844';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Eric the Clownfish', CANVAS_WIDTH / 2, 32);
+        }
+        const phx = CANVAS_WIDTH / 2 - 100, phy = CANVAS_HEIGHT - 40;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(phx, phy, 200, 16);
+        const phpct = this.player.health / this.player.maxHealth;
+        ctx.fillStyle = phpct > 0.5 ? '#44CC44' : phpct > 0.25 ? '#CCCC44' : '#CC4444';
+        ctx.fillRect(phx, phy, 200 * phpct, 16);
+        ctx.strokeStyle = '#FFF';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(phx, phy, 200, 16);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`HP: ${Math.ceil(this.player.health)} / ${this.player.maxHealth}`, CANVAS_WIDTH / 2, phy + 13);
+        this.hud.drawInventoryBar(ctx, this.player, this.input);
+        if (this.player.weapon) {
+            ctx.fillStyle = this.player.weapon.color;
+            ctx.font = 'bold 13px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.player.weapon.name, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 78);
+        }
+        this._drawFleeButton(ctx);
     }
 
     _makeRoomCamera(roomW, roomH) {

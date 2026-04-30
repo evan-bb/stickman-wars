@@ -112,6 +112,20 @@ class BiomeRenderer {
                     });
                 }
                 break;
+
+            case BIOME.SAVANNAH:
+                for (let i = 0; i < count * 0.7; i++) {
+                    const gx = b.x + randomRange(10, b.w - 10);
+                    const gy = b.y + randomRange(10, b.h - 10);
+                    this.groundDetails.push({
+                        x: gx, y: gy,
+                        type: Math.random() < 0.6 ? 'savannah_grass' : 'savannah_dirt',
+                        shade: randomRange(0.85, 1.1),
+                        size: randomRange(0.6, 1.3),
+                        color: randomFromArray(['#c9a64a', '#b89238', '#dfba56'])
+                    });
+                }
+                break;
         }
     }
 
@@ -135,6 +149,7 @@ class BiomeRenderer {
             case BIOME.ARCTIC: this.generateArctic(b); break;
             case BIOME.BEACH: this.generateBeach(b); break;
             case BIOME.VOLCANO: this.generateVolcano(b); break;
+            case BIOME.SAVANNAH: this.generateSavannah(b); break;
         }
     }
 
@@ -510,6 +525,14 @@ class BiomeRenderer {
             y: SAND_CASTLE_ENTRANCE.y,
             w: 70, h: 60
         });
+
+        // Ocean dive point (right at the water's edge — press E to dive in)
+        this.props.push({
+            type: 'ocean_portal',
+            x: OCEAN_ENTRANCE.x,
+            y: OCEAN_ENTRANCE.y,
+            sortOffset: -30
+        });
     }
 
     generateVolcano(b) {
@@ -602,6 +625,53 @@ class BiomeRenderer {
             type: 'volcano_lair',
             x: VOLCANO_LAIR_ENTRANCE.x,
             y: VOLCANO_LAIR_ENTRANCE.y,
+            sortOffset: -40
+        });
+    }
+
+    generateSavannah(b) {
+        // Acacia trees scattered across the savannah
+        for (let i = 0; i < 16; i++) {
+            this.props.push({
+                type: 'acacia_tree',
+                x: b.x + randomRange(80, b.w - 80),
+                y: b.y + randomRange(60, b.h - 60),
+                size: randomRange(0.9, 1.4),
+                lean: randomRange(-0.1, 0.1)
+            });
+        }
+        // Tall grass tufts
+        for (let i = 0; i < 30; i++) {
+            this.props.push({
+                type: 'tall_grass',
+                x: b.x + randomRange(20, b.w - 20),
+                y: b.y + randomRange(20, b.h - 20),
+                color: randomFromArray(['#a08530', '#b89638', '#7e6a26']),
+                size: randomRange(0.7, 1.3)
+            });
+        }
+        // Sandstone boulders
+        for (let i = 0; i < 10; i++) {
+            this.props.push({
+                type: 'savannah_rock',
+                x: b.x + randomRange(60, b.w - 60),
+                y: b.y + randomRange(60, b.h - 60),
+                size: randomRange(10, 24)
+            });
+        }
+        // Bones for vibe
+        for (let i = 0; i < 5; i++) {
+            this.props.push({
+                type: 'bones',
+                x: b.x + randomRange(60, b.w - 60),
+                y: b.y + randomRange(60, b.h - 60)
+            });
+        }
+        // Lion Den entrance — a big rocky cave mouth
+        this.props.push({
+            type: 'lion_den',
+            x: LION_DEN_ENTRANCE.x,
+            y: LION_DEN_ENTRANCE.y,
             sortOffset: -40
         });
     }
@@ -917,6 +987,20 @@ class BiomeRenderer {
                     ctx.fillStyle = 'rgba(30, 20, 15, 0.3)';
                     ctx.beginPath();
                     ctx.ellipse(pos.x, pos.y, 6 * d.size, 4 * d.size, d.shade, 0, Math.PI * 2);
+                    ctx.fill();
+                    break;
+
+                case 'savannah_grass':
+                    ctx.fillStyle = `rgba(160, 130, 50, ${0.5 * d.shade})`;
+                    ctx.beginPath();
+                    ctx.ellipse(pos.x, pos.y, 5 * d.size, 3 * d.size, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    break;
+
+                case 'savannah_dirt':
+                    ctx.fillStyle = `rgba(120, 90, 40, ${0.35 * d.shade})`;
+                    ctx.beginPath();
+                    ctx.ellipse(pos.x, pos.y, 7 * d.size, 4 * d.size, 0, 0, Math.PI * 2);
                     ctx.fill();
                     break;
             }
@@ -2355,6 +2439,204 @@ class BiomeRenderer {
                 ctx.beginPath();
                 ctx.ellipse(x + 20, y + 5, 2, 3, 0, 0, Math.PI * 2);
                 ctx.fill();
+                break;
+            }
+
+            case 'acacia_tree': {
+                const s = p.size || 1;
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.18)';
+                ctx.beginPath();
+                ctx.ellipse(pos.x + 4, pos.y + 8, 22 * s, 7 * s, 0, 0, Math.PI * 2);
+                ctx.fill();
+                // Tall thin trunk leaning slightly
+                const lean = p.lean || 0;
+                ctx.strokeStyle = '#5a3a1c';
+                ctx.lineWidth = 4 * s;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y + 6);
+                ctx.lineTo(pos.x + lean * 25, pos.y - 30 * s);
+                ctx.stroke();
+                // Flat acacia canopy (mushroom-cloud shape)
+                const topX = pos.x + lean * 25;
+                const topY = pos.y - 30 * s;
+                ctx.fillStyle = '#385c1e';
+                ctx.beginPath();
+                ctx.ellipse(topX, topY, 26 * s, 8 * s, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#4a7224';
+                ctx.beginPath();
+                ctx.ellipse(topX, topY - 3, 22 * s, 5 * s, 0, 0, Math.PI * 2);
+                ctx.fill();
+                break;
+            }
+
+            case 'tall_grass': {
+                const s = p.size || 1;
+                ctx.strokeStyle = p.color || '#a08530';
+                ctx.lineWidth = 1.5;
+                ctx.lineCap = 'round';
+                for (let i = -3; i <= 3; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(pos.x + i * 1.5 * s, pos.y + 4 * s);
+                    ctx.lineTo(pos.x + i * 1.5 * s + Math.sin(i) * 1.5, pos.y + 4 * s - 8 * s);
+                    ctx.stroke();
+                }
+                break;
+            }
+
+            case 'savannah_rock': {
+                const r = p.size || 14;
+                ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                ctx.beginPath();
+                ctx.ellipse(pos.x + 2, pos.y + 4, r, r * 0.4, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#a07840';
+                ctx.beginPath();
+                ctx.ellipse(pos.x, pos.y, r, r * 0.7, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#bd8d4c';
+                ctx.beginPath();
+                ctx.ellipse(pos.x - 2, pos.y - 2, r * 0.65, r * 0.4, 0, 0, Math.PI * 2);
+                ctx.fill();
+                break;
+            }
+
+            case 'bones': {
+                ctx.fillStyle = '#e8e0c8';
+                // Long bone
+                ctx.beginPath();
+                ctx.ellipse(pos.x, pos.y, 10, 2.5, Math.PI / 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(pos.x - 8, pos.y - 4, 2.2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(pos.x + 8, pos.y + 4, 2.2, 0, Math.PI * 2);
+                ctx.fill();
+                // Skull
+                ctx.fillStyle = '#f0e8d0';
+                ctx.beginPath();
+                ctx.ellipse(pos.x + 6, pos.y - 4, 4, 3, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#222';
+                ctx.fillRect(pos.x + 4, pos.y - 5, 1.5, 1.5);
+                ctx.fillRect(pos.x + 7, pos.y - 5, 1.5, 1.5);
+                break;
+            }
+
+            case 'lion_den': {
+                const x = pos.x, y = pos.y;
+                // Big rocky mound
+                ctx.fillStyle = '#8e6228';
+                ctx.beginPath();
+                ctx.ellipse(x, y - 5, 50, 32, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#a87a3a';
+                ctx.beginPath();
+                ctx.ellipse(x - 5, y - 12, 38, 22, 0, 0, Math.PI * 2);
+                ctx.fill();
+                // Dark cave mouth
+                ctx.fillStyle = '#1a0c00';
+                ctx.beginPath();
+                ctx.moveTo(x - 22, y + 18);
+                ctx.lineTo(x - 26, y - 2);
+                ctx.quadraticCurveTo(x, y - 28, x + 26, y - 2);
+                ctx.lineTo(x + 22, y + 18);
+                ctx.closePath();
+                ctx.fill();
+                // Glowing yellow eyes inside
+                const blink = Math.sin(Date.now() / 800) > -0.6 ? 1 : 0;
+                ctx.fillStyle = `rgba(255, 220, 60, ${0.85 * blink})`;
+                ctx.beginPath();
+                ctx.arc(x - 6, y - 6, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x + 6, y - 6, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+                // Bone in the dirt
+                ctx.fillStyle = '#e8e0c8';
+                ctx.beginPath();
+                ctx.ellipse(x - 30, y + 22, 8, 2, 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                // Label
+                ctx.fillStyle = '#FFD700';
+                ctx.font = 'bold 11px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText("JAYDEN'S DEN", x, y + 36);
+                ctx.fillStyle = '#DDB066';
+                ctx.font = '9px Arial';
+                ctx.fillText('Press E to enter', x, y + 48);
+                break;
+            }
+
+            case 'ocean_portal': {
+                const x = pos.x, y = pos.y;
+                // Ripple rings on the water
+                const t = Date.now() / 600;
+                for (let i = 0; i < 3; i++) {
+                    const ringT = ((t + i * 0.4) % 1.5);
+                    const a = Math.max(0, 1 - ringT / 1.5);
+                    ctx.strokeStyle = `rgba(120, 220, 255, ${a * 0.6})`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.ellipse(x, y, 24 + ringT * 18, 10 + ringT * 7, 0, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+                // Splash centre
+                ctx.fillStyle = 'rgba(180, 240, 255, 0.45)';
+                ctx.beginPath();
+                ctx.ellipse(x, y, 18, 7, 0, 0, Math.PI * 2);
+                ctx.fill();
+                // Label
+                ctx.fillStyle = '#88DDFF';
+                ctx.font = 'bold 11px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('🌊 OCEAN', x, y + 22);
+                ctx.fillStyle = '#AACCFF';
+                ctx.font = '9px Arial';
+                ctx.fillText('Press E to dive', x, y + 34);
+                break;
+            }
+
+            case 'sea_anemone': {
+                const x = pos.x, y = pos.y;
+                const wave = Math.sin(Date.now() / 600 + (p.x || 0) * 0.01);
+                // Base
+                ctx.fillStyle = '#cc4477';
+                ctx.beginPath();
+                ctx.ellipse(x, y + 6, 18, 8, 0, 0, Math.PI * 2);
+                ctx.fill();
+                // Tentacles waving up
+                ctx.strokeStyle = '#ee5588';
+                ctx.lineWidth = 3;
+                ctx.lineCap = 'round';
+                for (let i = -3; i <= 3; i++) {
+                    const sway = wave * 3 + i * 0.5;
+                    ctx.beginPath();
+                    ctx.moveTo(x + i * 4, y + 4);
+                    ctx.lineTo(x + i * 4 + sway, y - 18);
+                    ctx.stroke();
+                }
+                // Tentacle tips lighter
+                ctx.fillStyle = '#ffaaff';
+                for (let i = -3; i <= 3; i++) {
+                    const sway = wave * 3 + i * 0.5;
+                    ctx.beginPath();
+                    ctx.arc(x + i * 4 + sway, y - 18, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                // Label only on a "boss" anemone
+                if (p.boss) {
+                    ctx.fillStyle = '#FFD700';
+                    ctx.font = 'bold 11px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText("ERIC'S ANEMONE", x, y + 22);
+                    ctx.fillStyle = '#FFAA66';
+                    ctx.font = '9px Arial';
+                    ctx.fillText('Press E to fight', x, y + 34);
+                }
                 break;
             }
 
