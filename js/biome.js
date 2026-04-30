@@ -2573,30 +2573,40 @@ class BiomeRenderer {
 
             case 'ocean_portal': {
                 const x = pos.x, y = pos.y;
-                // Ripple rings on the water
+                // Bright glow halo so the portal is easy to spot
+                const halo = ctx.createRadialGradient(x, y, 8, x, y, 80);
+                halo.addColorStop(0, 'rgba(120, 220, 255, 0.55)');
+                halo.addColorStop(1, 'rgba(120, 220, 255, 0)');
+                ctx.fillStyle = halo;
+                ctx.beginPath();
+                ctx.arc(x, y, 80, 0, Math.PI * 2);
+                ctx.fill();
+                // Big animated ripple rings on the water
                 const t = Date.now() / 600;
-                for (let i = 0; i < 3; i++) {
-                    const ringT = ((t + i * 0.4) % 1.5);
+                for (let i = 0; i < 4; i++) {
+                    const ringT = ((t + i * 0.35) % 1.5);
                     const a = Math.max(0, 1 - ringT / 1.5);
-                    ctx.strokeStyle = `rgba(120, 220, 255, ${a * 0.6})`;
-                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = `rgba(140, 230, 255, ${a * 0.85})`;
+                    ctx.lineWidth = 3;
                     ctx.beginPath();
-                    ctx.ellipse(x, y, 24 + ringT * 18, 10 + ringT * 7, 0, 0, Math.PI * 2);
+                    ctx.ellipse(x, y, 36 + ringT * 30, 16 + ringT * 12, 0, 0, Math.PI * 2);
                     ctx.stroke();
                 }
                 // Splash centre
-                ctx.fillStyle = 'rgba(180, 240, 255, 0.45)';
+                ctx.fillStyle = 'rgba(200, 245, 255, 0.7)';
                 ctx.beginPath();
-                ctx.ellipse(x, y, 18, 7, 0, 0, Math.PI * 2);
+                ctx.ellipse(x, y, 28, 11, 0, 0, Math.PI * 2);
                 ctx.fill();
-                // Label
-                ctx.fillStyle = '#88DDFF';
-                ctx.font = 'bold 11px Arial';
+                // Label with shadow for readability
+                ctx.font = 'bold 16px Arial';
                 ctx.textAlign = 'center';
-                ctx.fillText('🌊 OCEAN', x, y + 22);
-                ctx.fillStyle = '#AACCFF';
-                ctx.font = '9px Arial';
-                ctx.fillText('Press E to dive', x, y + 34);
+                ctx.fillStyle = 'rgba(0, 30, 60, 0.7)';
+                ctx.fillText('🌊 OCEAN', x + 1, y - 27);
+                ctx.fillStyle = '#88DDFF';
+                ctx.fillText('🌊 OCEAN', x, y - 28);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = 'bold 11px Arial';
+                ctx.fillText('Press E to dive', x, y - 12);
                 break;
             }
 

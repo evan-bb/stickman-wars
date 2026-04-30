@@ -72,6 +72,40 @@ class Minimap {
             ctx.fill('evenodd');
         }
 
+        // ---- Map markers for entrances ----
+        // Each marker shows where you can press E to enter a boss room or
+        // a special zone. Boss entries fade out once the boss is defeated.
+        const game = window.game;
+        const markers = [
+            { wx: CAVE_ENTRANCE.x, wy: CAVE_ENTRANCE.y, color: '#CC44CC', label: '🕷', defeated: !!(game && game.bossDefeated) },
+            { wx: HAUNTED_HOUSE_ENTRANCE.x, wy: HAUNTED_HOUSE_ENTRANCE.y, color: '#88CCFF', label: '👻', defeated: !!(game && game.ghostDefeated) },
+            { wx: SAND_CASTLE_ENTRANCE.x, wy: SAND_CASTLE_ENTRANCE.y, color: '#FF8844', label: '🦀', defeated: !!(game && game.crabDefeated) },
+            { wx: ICE_CASTLE_ENTRANCE.x, wy: ICE_CASTLE_ENTRANCE.y, color: '#88DDFF', label: '🐻‍❄', defeated: !!(game && game.polarDefeated) },
+            { wx: VOLCANO_LAIR_ENTRANCE.x, wy: VOLCANO_LAIR_ENTRANCE.y, color: '#FF4400', label: '🌋', defeated: !!(game && game.lavaDefeated) },
+            { wx: LION_DEN_ENTRANCE.x, wy: LION_DEN_ENTRANCE.y, color: '#FFAA00', label: '🦁', defeated: !!(game && game.lionDefeated) },
+            { wx: OCEAN_ENTRANCE.x, wy: OCEAN_ENTRANCE.y, color: '#33CCEE', label: '🌊', defeated: false }
+        ];
+        for (const mk of markers) {
+            const iso = worldToIso(mk.wx, mk.wy);
+            const px = mx + (iso.x - ISO_WORLD_BOUNDS.minX) * this.isoScale;
+            const py = my + (iso.y - ISO_WORLD_BOUNDS.minY) * this.isoScale;
+            ctx.globalAlpha = mk.defeated ? 0.25 : 1;
+            // Pulsing dot under the icon
+            const pulse = 0.6 + Math.sin(Date.now() / 300 + mk.wx) * 0.4;
+            ctx.fillStyle = mk.color;
+            ctx.beginPath();
+            ctx.arc(px, py, 4 * pulse, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            // Tiny emoji label above
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(mk.label, px, py - 5);
+        }
+        ctx.globalAlpha = 1;
+
         // Camera viewport outline (diamond-ish shape showing visible area)
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.lineWidth = 1;
