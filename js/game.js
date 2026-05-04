@@ -94,6 +94,9 @@ class Game {
         this.lionBoss = null;
         this.clownDefeated = false;
         this.clownBoss = null;
+        this.evilDefeated = false;
+        this.evilBoss = null;
+        this.evilUnlocked = false;
 
         // Storm system
         this.storm = {
@@ -149,6 +152,7 @@ class Game {
             case 'LION_FIGHT': this.updateLionFight(dt); break;
             case 'OCEAN': this.updateOcean(dt); break;
             case 'CLOWN_FIGHT': this.updateClownFight(dt); break;
+            case 'EVIL_FIGHT': this.updateEvilFight(dt); break;
             case 'WIN': break;
             case 'LOSE': this.updateLose(dt); break;
         }
@@ -175,6 +179,7 @@ class Game {
             case 'LION_FIGHT': this.renderLionFight(); break;
             case 'OCEAN': this.renderOcean(); break;
             case 'CLOWN_FIGHT': this.renderClownFight(); break;
+            case 'EVIL_FIGHT': this.renderEvilFight(); break;
             case 'WIN': this.renderPlaying(); this.renderWin(); break;
             case 'LOSE': this.renderPlaying(); this.renderLose(); break;
         }
@@ -1518,6 +1523,21 @@ class Game {
             this.player.interactTarget = 'ocean';
         }
 
+        // Unlock the secret final boss "Evan the Evil" once all 7 bosses
+        // have been defeated in the current run.
+        if (!this.evilUnlocked && !this.evilDefeated &&
+            this.bossDefeated && this.ghostDefeated && this.crabDefeated &&
+            this.polarDefeated && this.lavaDefeated &&
+            this.lionDefeated && this.clownDefeated) {
+            this.evilUnlocked = true;
+            this.hud.notify('⚠ A dark portal has opened in the centre of the world... ⚠', '#FF44FF', 6);
+        }
+        if (this.evilUnlocked && !this.evilDefeated &&
+            distance(this.player.x, this.player.y, EVIL_PORTAL.x, EVIL_PORTAL.y) < EVIL_PORTAL.radius) {
+            this.player.interactPrompt = 'Press E to enter the Void (Boss: Evan the Evil)';
+            this.player.interactTarget = 'evil';
+        }
+
         // Check downed teammate revive
         // Find a downed-but-revivable Blue teammate within reach.
         if ((this.player.medkits || 0) > 0 && !this.player.interactTarget) {
@@ -1548,6 +1568,8 @@ class Game {
                 this.enterLionDen();
             } else if (this.player.interactTarget === 'ocean') {
                 this.enterOcean();
+            } else if (this.player.interactTarget === 'evil') {
+                this.enterEvilLair();
             } else if (this.player.interactTarget instanceof Crate) {
                 const loot = this.player.interactTarget.open(this.player);
                 if (loot) {
@@ -1880,6 +1902,55 @@ class Game {
             for (const m of this.medkits) {
                 if (!m.collected) m.draw(ctx, this.camera);
             }
+        }
+
+        // Evan the Evil portal — appears in the centre of the world once
+        // every other boss has been defeated.
+        if (this.evilUnlocked && !this.evilDefeated && this.camera.isVisible(EVIL_PORTAL.x, EVIL_PORTAL.y, 100)) {
+            const ppos = this.camera.worldToScreen(EVIL_PORTAL.x, EVIL_PORTAL.y);
+            const t = Date.now() / 600;
+            // Outer dark glow
+            const glow = ctx.createRadialGradient(ppos.x, ppos.y, 10, ppos.x, ppos.y, 80);
+            glow.addColorStop(0, 'rgba(155, 0, 255, 0.8)');
+            glow.addColorStop(0.6, 'rgba(80, 0, 130, 0.5)');
+            glow.addColorStop(1, 'rgba(20, 0, 40, 0)');
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(ppos.x, ppos.y, 80, 0, Math.PI * 2);
+            ctx.fill();
+            // Swirling inner portal
+            for (let i = 0; i < 3; i++) {
+                const ringT = ((t + i * 0.4) % 1.5);
+                const a = Math.max(0, 1 - ringT / 1.5);
+                ctx.strokeStyle = `rgba(255, 80, 255, ${a * 0.85})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.ellipse(ppos.x, ppos.y, 30 + ringT * 26, 14 + ringT * 10, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            // Pentagram at the centre
+            ctx.strokeStyle = 'rgba(255, 200, 255, 0.85)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            for (let i = 0; i <= 5; i++) {
+                const a = -Math.PI / 2 + (i * 4 / 5) * Math.PI * 2;
+                const x = ppos.x + Math.cos(a) * 14;
+                const y = ppos.y + Math.sin(a) * 7;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.stroke();
+            // Label
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillText('★ EVAN THE EVIL ★', ppos.x + 1, ppos.y - 35);
+            ctx.fillStyle = '#FF44FF';
+            ctx.fillText('★ EVAN THE EVIL ★', ppos.x, ppos.y - 36);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 11px Arial';
+            ctx.fillText('Press E to enter', ppos.x, ppos.y - 22);
         }
 
         // Downed teammate "REVIVE" prompt above their head
@@ -4121,6 +4192,203 @@ class Game {
         this._drawFleeButton(ctx);
     }
 
+    // ==================== EVIL BOSS FIGHT ====================
+
+    enterEvilLair() {
+        this.inCave = true;
+        this.state = 'EVIL_FIGHT';
+        this.music.play('boss');
+        this.evilBoss = new EvilBoss(EVIL_BOSS_LAIR_WIDTH / 2, 200);
+        this.evilBoss.activate();
+        this.player.x = EVIL_BOSS_LAIR_WIDTH / 2;
+        this.player.y = EVIL_BOSS_LAIR_HEIGHT - 80;
+        this.evilProjectiles = [];
+        this.evilParticles = [];
+        this.evilPickup = null;
+        this._evilCamera = this._makeRoomCamera(EVIL_BOSS_LAIR_WIDTH, EVIL_BOSS_LAIR_HEIGHT);
+    }
+
+    exitEvilLair() {
+        this.inCave = false;
+        this.state = 'PLAYING';
+        this.music.play('battle');
+        this.player.x = EVIL_PORTAL.x;
+        this.player.y = EVIL_PORTAL.y + 80;
+    }
+
+    updateEvilFight(dt) {
+        const cam = this._evilCamera || this._makeRoomCamera(EVIL_BOSS_LAIR_WIDTH, EVIL_BOSS_LAIR_HEIGHT);
+        this._evilCamera = cam;
+        let mx = 0, my = 0;
+        if (this.input.isKeyDown('w') || this.input.isKeyDown('arrowup'))    { mx -= 1; my -= 1; }
+        if (this.input.isKeyDown('s') || this.input.isKeyDown('arrowdown'))  { mx += 1; my += 1; }
+        if (this.input.isKeyDown('a') || this.input.isKeyDown('arrowleft'))  { mx -= 1; my += 1; }
+        if (this.input.isKeyDown('d') || this.input.isKeyDown('arrowright')) { mx += 1; my -= 1; }
+        const mLen = Math.sqrt(mx * mx + my * my);
+        if (mLen > 0) { mx /= mLen; my /= mLen; }
+        this.player.vx = mx * this.player.speed;
+        this.player.vy = my * this.player.speed;
+        this.player.x += this.player.vx * dt;
+        this.player.y += this.player.vy * dt;
+        this.player.x = clamp(this.player.x, 30, EVIL_BOSS_LAIR_WIDTH - 30);
+        this.player.y = clamp(this.player.y, 30, EVIL_BOSS_LAIR_HEIGHT - 30);
+        if (Math.abs(this.player.vx) > 1 || Math.abs(this.player.vy) > 1) {
+            this.player.moveFacing = Math.atan2(this.player.vy, this.player.vx);
+            this.player.walkTimer += dt;
+        }
+        const worldMouse = cam.screenToWorld(this.input.mouseX, this.input.mouseY);
+        this.player.facing = angleBetween(this.player.x, this.player.y, worldMouse.x, worldMouse.y);
+        for (let i = 1; i <= 9; i++) {
+            if (this.input.isKeyDown(i.toString())) { this.player.switchToSlot(i - 1); this.input.keys[i.toString()] = false; }
+        }
+        const scroll = this.input.consumeScroll();
+        if (scroll !== 0) this.player.cycleWeapon(scroll > 0 ? 1 : -1);
+        if (this.player.weaponSwitched) {
+            this.player.weaponSwitched = false;
+            if (this.player.weapon) this.hud.notify(`Switched to ${this.player.weapon.name}`, this.player.weapon.color, 1.2);
+        }
+        const evilEntities = [this.evilBoss];
+        if (this.player.weapon && (this.input.mouseDown || this.input.isKeyDown(' '))) {
+            this.player.weapon.attack(this.player, evilEntities, this.evilProjectiles, this.evilParticles);
+        }
+        for (const wpn of this.player.inventory) wpn.update(dt);
+        if (this.player.attackAnim > 0) { this.player.attackAnim -= dt * 4; if (this.player.attackAnim < 0) this.player.attackAnim = 0; }
+        this.evilBoss.update(dt, this.player, this.evilProjectiles, this.evilParticles);
+        for (const proj of this.evilProjectiles) {
+            proj.update(dt);
+            if (proj.team === TEAMS.NEUTRAL && this.player.alive) {
+                if (circleCollision(proj.x, proj.y, proj.radius, this.player.x, this.player.y, this.player.radius)) {
+                    this.player.takeDamage(proj.damage, this.evilBoss);
+                    spawnHitParticles(this.evilParticles, this.player.x, this.player.y, '#FF44FF', 5);
+                    this.evilParticles.push(new DamageNumber(this.player.x, this.player.y - 10, proj.damage, '#FF44FF'));
+                    proj.alive = false;
+                }
+            }
+            if (proj.team === TEAMS.BLUE && this.evilBoss.alive) {
+                if (circleCollision(proj.x, proj.y, proj.radius, this.evilBoss.x, this.evilBoss.y, this.evilBoss.radius)) {
+                    this.evilBoss.takeDamage(proj.damage, this.player);
+                    spawnHitParticles(this.evilParticles, this.evilBoss.x, this.evilBoss.y, '#9B00FF', 5);
+                    this.evilParticles.push(new DamageNumber(this.evilBoss.x, this.evilBoss.y - 10, proj.damage, '#FFAA44'));
+                    proj.alive = false;
+                }
+            }
+        }
+        this.evilProjectiles = this.evilProjectiles.filter(p => p.alive);
+        for (const p of this.evilParticles) p.update(dt);
+        this.evilParticles = this.evilParticles.filter(p => p.alive || (p.life !== undefined && p.life > 0));
+        this.hud.update(dt);
+        if (this.input.isKeyDown('escape')) {
+            this.exitEvilLair();
+            this.hud.notify('Fled the Void!', '#FF44FF', 2);
+            this.input.keys['escape'] = false;
+            return;
+        }
+        if (!this.evilBoss.alive) {
+            if (!this.evilDefeated) {
+                this.evilDefeated = true;
+                this.player.sticks += 200;
+                this.player.addXP(XP_PER_BOSS * 4);
+                this.hud.notify('★ EVAN DEFEATED! Pick up the Blade of Evan! ★', '#FF44FF', 4);
+                this.evilPickup = new WeaponPickup(EVIL_BOSS_LAIR_WIDTH / 2, EVIL_BOSS_LAIR_HEIGHT / 2, 'EVIL_BLADE');
+            }
+            this._handleBossPickup('evilPickup', () => this.exitEvilLair());
+        }
+        if (!this.player.alive) { this.state = 'LOSE'; this.music.stop(); this.music.playSfx('player_death'); }
+    }
+
+    renderEvilFight() {
+        const ctx = this.ctx;
+        const cam = this._evilCamera || this._makeRoomCamera(EVIL_BOSS_LAIR_WIDTH, EVIL_BOSS_LAIR_HEIGHT);
+        // Pitch black void background
+        ctx.fillStyle = '#0a0014';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        // Star field
+        const time = Date.now() / 1000;
+        for (let i = 0; i < 80; i++) {
+            const sx = ((i * 73 + 100) % CANVAS_WIDTH);
+            const sy = ((i * 137 + 50) % CANVAS_HEIGHT);
+            const tw = 0.4 + 0.6 * Math.abs(Math.sin(time * 2 + i));
+            ctx.fillStyle = `rgba(255, 200, 255, ${tw * 0.7})`;
+            ctx.fillRect(sx, sy, 1.5, 1.5);
+        }
+        // Floor
+        const corners = [
+            cam.worldToScreen(0, 0),
+            cam.worldToScreen(EVIL_BOSS_LAIR_WIDTH, 0),
+            cam.worldToScreen(EVIL_BOSS_LAIR_WIDTH, EVIL_BOSS_LAIR_HEIGHT),
+            cam.worldToScreen(0, EVIL_BOSS_LAIR_HEIGHT)
+        ];
+        ctx.fillStyle = '#1a0a2a';
+        ctx.beginPath();
+        ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
+        ctx.closePath();
+        ctx.fill();
+        // Glowing pentagram in the centre
+        const center = cam.worldToScreen(EVIL_BOSS_LAIR_WIDTH / 2, EVIL_BOSS_LAIR_HEIGHT / 2);
+        const penR = 90;
+        ctx.strokeStyle = `rgba(255, 80, 255, ${0.4 + Math.sin(time * 2) * 0.2})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i <= 5; i++) {
+            const a = -Math.PI / 2 + (i * 4 / 5) * Math.PI * 2;
+            const x = center.x + Math.cos(a) * penR;
+            const y = center.y + Math.sin(a) * penR * 0.5;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.stroke();
+        // Border glow
+        ctx.strokeStyle = `rgba(155, 0, 255, ${0.6 + Math.sin(time * 3) * 0.2})`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
+        ctx.closePath();
+        ctx.stroke();
+        if (this.evilBoss.alive || this.evilBoss.deathTimer > 0) this.evilBoss.draw(ctx, cam);
+        drawStickman(ctx, this.player, cam);
+        for (const proj of this.evilProjectiles) proj.draw(ctx, cam);
+        for (const p of this.evilParticles) p.draw(ctx, cam);
+        if (this.evilPickup && !this.evilPickup.collected) this.evilPickup.draw(ctx, cam);
+        // Heavy purple vignette
+        const vig = ctx.createRadialGradient(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.25, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.7);
+        vig.addColorStop(0, 'rgba(0,0,0,0)');
+        vig.addColorStop(1, 'rgba(40, 0, 60, 0.8)');
+        ctx.fillStyle = vig;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        if (this.evilBoss.alive) {
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(CANVAS_WIDTH / 2 - 140, 10, 280, 30);
+            ctx.fillStyle = '#FF44FF';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('★ Evan the Evil ★', CANVAS_WIDTH / 2, 32);
+        }
+        const phx = CANVAS_WIDTH / 2 - 100, phy = CANVAS_HEIGHT - 40;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(phx, phy, 200, 16);
+        const phpct = this.player.health / this.player.maxHealth;
+        ctx.fillStyle = phpct > 0.5 ? '#44CC44' : phpct > 0.25 ? '#CCCC44' : '#CC4444';
+        ctx.fillRect(phx, phy, 200 * phpct, 16);
+        ctx.strokeStyle = '#FFF';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(phx, phy, 200, 16);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`HP: ${Math.ceil(this.player.health)} / ${this.player.maxHealth}`, CANVAS_WIDTH / 2, phy + 13);
+        this.hud.drawInventoryBar(ctx, this.player, this.input);
+        if (this.player.weapon) {
+            ctx.fillStyle = this.player.weapon.color;
+            ctx.font = 'bold 13px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.player.weapon.name, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 78);
+        }
+        this._drawFleeButton(ctx);
+    }
+
     _makeRoomCamera(roomW, roomH) {
         const centerIso = worldToIso(roomW / 2, roomH / 2);
         const isoOffX = centerIso.x;
@@ -4420,7 +4688,11 @@ class Game {
         // Award XP once per match end (use a flag to prevent re-awarding on every frame)
         if (!this._matchXPAwarded) {
             this._matchXPAwarded = true;
-            const bossKills = (this.bossDefeated ? 1 : 0) + (this.ghostDefeated ? 1 : 0) + (this.crabDefeated ? 1 : 0);
+            const bossKills =
+                (this.bossDefeated ? 1 : 0) + (this.ghostDefeated ? 1 : 0) +
+                (this.crabDefeated ? 1 : 0) + (this.polarDefeated ? 1 : 0) +
+                (this.lavaDefeated ? 1 : 0) + (this.lionDefeated ? 1 : 0) +
+                (this.clownDefeated ? 1 : 0) + (this.evilDefeated ? 1 : 0);
             this._matchXP = this.progression.calculateMatchXP(
                 this.player.kills, bossKills, this.matchSticksCollected, this.gameTime
             );
@@ -4451,10 +4723,15 @@ class Game {
         ctx.fillText(`Kills: ${this.player.kills}`, cx - 80, y);
         ctx.fillText(`Sticks: ${this.matchSticksCollected}`, cx + 80, y);
         y += 20;
-        if (this.bossDefeated || this.ghostDefeated || this.crabDefeated) {
+        const allDefeats = [
+            this.bossDefeated && 'Luca', this.ghostDefeated && 'James',
+            this.crabDefeated && 'Charlie', this.polarDefeated && 'Tommy',
+            this.lavaDefeated && 'Paddy', this.lionDefeated && 'Jayden',
+            this.clownDefeated && 'Eric', this.evilDefeated && 'Evan'
+        ].filter(Boolean);
+        if (allDefeats.length > 0) {
             ctx.fillStyle = '#FFD700';
-            const bosses = [this.bossDefeated && 'Spider', this.ghostDefeated && 'Ghost', this.crabDefeated && 'Crab'].filter(Boolean);
-            ctx.fillText('Bosses: ' + bosses.join(', '), cx, y);
+            ctx.fillText('Bosses defeated: ' + allDefeats.join(', '), cx, y);
             y += 20;
         }
 

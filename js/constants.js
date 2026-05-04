@@ -110,7 +110,9 @@ const WEAPON_DEFS = {
     LAVA_SWORD: { name: 'Lava Sword', damage: 65, range: 50, cooldown: 420, type: 'melee', color: '#FF4400', burn: true },
     SAND_SWORD: { name: 'Sand Sword', damage: 54, range: 52, cooldown: 400, type: 'melee', color: '#E8C070' },
     LION_FANG: { name: 'Lion Fang', damage: 70, range: 55, cooldown: 380, type: 'melee', color: '#E0AA44' },
-    TIDE_TRIDENT: { name: 'Tide Trident', damage: 62, range: 320, cooldown: 460, type: 'ranged', projectileSpeed: 440, color: '#33CCEE', pierce: true }
+    TIDE_TRIDENT: { name: 'Tide Trident', damage: 62, range: 320, cooldown: 460, type: 'ranged', projectileSpeed: 440, color: '#33CCEE', pierce: true },
+    // The legendary reward for defeating Evan the Evil
+    EVIL_BLADE: { name: 'Blade of Evan', damage: 100, range: 60, cooldown: 350, type: 'melee', color: '#9B00FF', burn: true }
 };
 
 // Crate tiers
@@ -204,6 +206,22 @@ const CLOWN_BOSS_CONFIG = {
     phase2Threshold: 0.5
 };
 
+// Evan the Evil — secret final boss that unlocks after defeating ALL
+// other bosses in a single run. Spawns in the centre of the map.
+const EVIL_BOSS_CONFIG = {
+    name: 'Evan the Evil',
+    health: 1500,
+    damage: 35,
+    speed: 110,
+    dashSpeed: 360,
+    boltSpeed: 260,
+    phase2Threshold: 0.5,
+    phase3Threshold: 0.25
+};
+const EVIL_BOSS_LAIR_WIDTH = 900;
+const EVIL_BOSS_LAIR_HEIGHT = 700;
+const EVIL_PORTAL = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2, radius: 80 };
+
 // Stick pickup config
 const STICK_SPAWN_COUNT = 200;
 const STICK_RESPAWN_TIME = 30; // seconds
@@ -224,9 +242,9 @@ const FOOD_TYPES = [
 
 // Storm config
 const STORM_CONFIG = {
-    startDelay: 60,        // seconds before storm appears
-    shrinkInterval: 45,    // seconds between each shrink phase
-    shrinkDuration: 12,    // seconds for the circle to animate smaller
+    startDelay: 90,        // seconds before storm appears (1.5 min)
+    shrinkInterval: 60,    // seconds between each shrink phase
+    shrinkDuration: 14,    // seconds for the circle to animate smaller
     shrinkPhases: 5,       // number of shrink phases
     minRadius: 300,        // minimum radius (shrink limit)
     damage: 15,            // damage per second in the storm

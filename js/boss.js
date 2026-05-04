@@ -2008,3 +2008,272 @@ class ClownfishBoss extends Entity {
         }
     }
 }
+
+// ============================================
+// Final Boss - Evan the Evil
+// ============================================
+// Spawns only after all other bosses are defeated. Massive HP, 3 phases,
+// teleports, dashes, multi-projectile spreads, and a final spiral attack.
+
+class EvilBoss extends Entity {
+    constructor(x, y) {
+        super(x, y, TEAMS.NEUTRAL);
+        this.health = EVIL_BOSS_CONFIG.health;
+        this.maxHealth = EVIL_BOSS_CONFIG.health;
+        this.name = EVIL_BOSS_CONFIG.name;
+        this.speed = EVIL_BOSS_CONFIG.speed;
+        this.radius = 30;
+        this.phase = 1;
+        this.attackTimer = 2;
+        this.currentAttack = 'idle';
+        this.dashTarget = null;
+        this.dashTimer = 0;
+        this.teleportTimer = 0;
+        this.teleportFade = 0;
+        this.teleportTarget = null;
+        this.spiralTimer = 0;
+        this.spiralAngle = 0;
+        this.flickerPhase = 0;
+        this.cloakPhase = Math.random() * Math.PI * 2;
+        this.active = false;
+    }
+    activate() { this.active = true; this.attackTimer = 1.5; }
+    update(dt, player, projectiles, particles) {
+        if (!this.active || !this.alive) return;
+        super.update(dt);
+        this.flickerPhase += dt * 6;
+        this.cloakPhase += dt * 2;
+        // Phase transitions
+        if (this.health / this.maxHealth <= EVIL_BOSS_CONFIG.phase2Threshold && this.phase === 1) {
+            this.phase = 2;
+            this.speed = EVIL_BOSS_CONFIG.speed * 1.25;
+            spawnHitParticles(particles, this.x, this.y, '#9B00FF', 30);
+        }
+        if (this.health / this.maxHealth <= EVIL_BOSS_CONFIG.phase3Threshold && this.phase === 2) {
+            this.phase = 3;
+            this.speed = EVIL_BOSS_CONFIG.speed * 1.5;
+            spawnHitParticles(particles, this.x, this.y, '#FF00FF', 40);
+        }
+        if (player && player.alive) this.facing = angleBetween(this.x, this.y, player.x, player.y);
+        // Teleport in progress
+        if (this.teleportTarget) {
+            this.teleportFade += dt * 5;
+            if (this.teleportFade >= 1) {
+                this.x = this.teleportTarget.x;
+                this.y = this.teleportTarget.y;
+                this.teleportTarget = null;
+                spawnHitParticles(particles, this.x, this.y, '#9B00FF', 12);
+            }
+            return;
+        }
+        if (this.teleportFade > 0) {
+            this.teleportFade -= dt * 4;
+            if (this.teleportFade < 0) this.teleportFade = 0;
+        }
+        // Spiral attack (phase 3)
+        if (this.spiralTimer > 0) {
+            this.spiralTimer -= dt;
+            this.spiralAngle += dt * 8;
+            if (Math.floor(this.spiralAngle * 10) !== this._lastSpiralEmit) {
+                this._lastSpiralEmit = Math.floor(this.spiralAngle * 10);
+                const w = { damage: 18, projectileSpeed: 240, color: '#FF44FF', burn: false, pierce: false };
+                for (let i = 0; i < 3; i++) {
+                    const a = this.spiralAngle + (i / 3) * Math.PI * 2;
+                    projectiles.push(new Projectile(this.x, this.y, a, w, TEAMS.NEUTRAL, this));
+                }
+            }
+            if (this.spiralTimer <= 0) {
+                this.attackTimer = this.phase === 3 ? 1.0 : 1.8;
+            }
+            return;
+        }
+        // Dash
+        if (this.currentAttack === 'dash') {
+            this.dashTimer -= dt;
+            if (this.dashTarget) {
+                const angle = angleBetween(this.x, this.y, this.dashTarget.x, this.dashTarget.y);
+                this.x += Math.cos(angle) * EVIL_BOSS_CONFIG.dashSpeed * dt;
+                this.y += Math.sin(angle) * EVIL_BOSS_CONFIG.dashSpeed * dt;
+                this.x = clamp(this.x, 30, EVIL_BOSS_LAIR_WIDTH - 30);
+                this.y = clamp(this.y, 30, EVIL_BOSS_LAIR_HEIGHT - 30);
+                if (Math.random() < 0.5) spawnHitParticles(particles, this.x, this.y, '#9B00FF', 1);
+            }
+            if (player && player.alive && distance(this.x, this.y, player.x, player.y) < this.radius + player.radius) {
+                player.takeDamage(EVIL_BOSS_CONFIG.damage, this);
+                spawnHitParticles(particles, player.x, player.y, '#FF00FF', 8);
+                particles.push(new DamageNumber(player.x, player.y - 10, EVIL_BOSS_CONFIG.damage, '#FF00FF'));
+                const kbA = angleBetween(this.x, this.y, player.x, player.y);
+                player.x += Math.cos(kbA) * 28;
+                player.y += Math.sin(kbA) * 28;
+                this.dashTimer = 0;
+            }
+            if (this.dashTimer <= 0) {
+                this.currentAttack = 'idle';
+                this.attackTimer = this.phase >= 2 ? 0.9 : 1.5;
+            }
+            return;
+        }
+        // Movement toward player
+        if (player && player.alive) {
+            const dist = distance(this.x, this.y, player.x, player.y);
+            if (dist > 100) {
+                this.x += Math.cos(this.facing) * this.speed * dt;
+                this.y += Math.sin(this.facing) * this.speed * dt;
+            }
+            this.x = clamp(this.x, 30, EVIL_BOSS_LAIR_WIDTH - 30);
+            this.y = clamp(this.y, 30, EVIL_BOSS_LAIR_HEIGHT - 30);
+        }
+        this.attackTimer -= dt;
+        this.teleportTimer -= dt;
+        if (this.attackTimer <= 0 && player && player.alive) this.chooseAttack(player, projectiles, particles);
+    }
+    chooseAttack(player, projectiles, particles) {
+        const roll = Math.random();
+        // Phase 3: spiral attack chance
+        if (this.phase === 3 && roll < 0.35) {
+            this.spiralTimer = 1.5;
+            this.spiralAngle = 0;
+            this._lastSpiralEmit = -1;
+            spawnHitParticles(particles, this.x, this.y, '#FF00FF', 8);
+            return;
+        }
+        // Teleport
+        if (this.teleportTimer <= 0 && roll < 0.3) {
+            const angle = Math.random() * Math.PI * 2;
+            this.teleportTarget = {
+                x: clamp(player.x + Math.cos(angle) * 200, 60, EVIL_BOSS_LAIR_WIDTH - 60),
+                y: clamp(player.y + Math.sin(angle) * 200, 60, EVIL_BOSS_LAIR_HEIGHT - 60)
+            };
+            this.teleportTimer = this.phase >= 2 ? 2.5 : 4;
+            this.attackTimer = 0.8;
+            return;
+        }
+        // Dash
+        if (roll < 0.55) {
+            this.currentAttack = 'dash';
+            this.dashTimer = 0.6;
+            this.dashTarget = { x: player.x, y: player.y };
+            this.attackTimer = 2.5;
+        } else {
+            // Multi-bolt spread
+            const angle = angleBetween(this.x, this.y, player.x, player.y);
+            const w = { damage: 20, projectileSpeed: EVIL_BOSS_CONFIG.boltSpeed, color: '#FF44FF', burn: false, pierce: false };
+            const count = this.phase === 1 ? 3 : (this.phase === 2 ? 5 : 7);
+            const spread = 0.5;
+            for (let i = 0; i < count; i++) {
+                const a = angle + (i - (count - 1) / 2) * (spread / Math.max(1, count - 1) * 2);
+                projectiles.push(new Projectile(this.x, this.y, a, w, TEAMS.NEUTRAL, this));
+            }
+            this.attackTimer = this.phase >= 2 ? 1.0 : 1.6;
+        }
+    }
+    draw(ctx, camera) {
+        if (!this.alive && this.deathTimer <= 0) return;
+        const pos = camera.worldToScreen(this.x, this.y);
+        const { x, y } = pos;
+        ctx.save();
+        if (!this.alive) ctx.globalAlpha = clamp(this.deathTimer / 0.8, 0, 1);
+        // Teleport fade
+        const alpha = 1 - this.teleportFade;
+        ctx.globalAlpha *= alpha;
+        // Dark cloak shadow
+        const cloakR = 36 + Math.sin(this.cloakPhase) * 3;
+        const cloakGrad = ctx.createRadialGradient(x, y, 5, x, y, cloakR);
+        cloakGrad.addColorStop(0, 'rgba(70, 0, 90, 0.95)');
+        cloakGrad.addColorStop(0.6, 'rgba(40, 0, 60, 0.9)');
+        cloakGrad.addColorStop(1, 'rgba(20, 0, 30, 0)');
+        ctx.fillStyle = cloakGrad;
+        ctx.beginPath();
+        ctx.arc(x, y, cloakR, 0, Math.PI * 2);
+        ctx.fill();
+        // Body — tall dark stickman with a hood
+        ctx.strokeStyle = this.phase === 3 ? '#FF00FF' : (this.phase === 2 ? '#BB00CC' : '#7A0099');
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.shadowColor = this.phase === 3 ? '#FF00FF' : '#9B00FF';
+        ctx.shadowBlur = 12;
+        // Spine
+        ctx.beginPath();
+        ctx.moveTo(x, y - 18);
+        ctx.lineTo(x, y + 22);
+        ctx.stroke();
+        // Legs
+        ctx.beginPath();
+        ctx.moveTo(x, y + 22);
+        ctx.lineTo(x - 10, y + 40);
+        ctx.moveTo(x, y + 22);
+        ctx.lineTo(x + 10, y + 40);
+        ctx.stroke();
+        // Arms outstretched
+        const armWave = Math.sin(this.cloakPhase * 1.5) * 6;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 8);
+        ctx.lineTo(x - 22, y + 4 + armWave);
+        ctx.moveTo(x, y - 8);
+        ctx.lineTo(x + 22, y + 4 - armWave);
+        ctx.stroke();
+        // Head — dark hood
+        ctx.fillStyle = '#1a0024';
+        ctx.beginPath();
+        ctx.arc(x, y - 26, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = this.phase === 3 ? '#FF00FF' : '#7A0099';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Glowing eyes
+        ctx.shadowBlur = 18;
+        ctx.fillStyle = this.phase === 3 ? '#FFFF44' : (this.phase === 2 ? '#FF4400' : '#FF0066');
+        ctx.beginPath();
+        ctx.arc(x - 5, y - 28, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x + 5, y - 28, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        // Floating crown of fire (phase 3)
+        if (this.phase === 3) {
+            for (let i = 0; i < 6; i++) {
+                const a = (i / 6) * Math.PI * 2 + this.flickerPhase * 0.3;
+                const fx = x + Math.cos(a) * 18;
+                const fy = y - 40 + Math.sin(a) * 8;
+                ctx.fillStyle = `rgba(255, 80, 255, ${0.7 + Math.sin(this.flickerPhase + i) * 0.3})`;
+                ctx.beginPath();
+                ctx.arc(fx, fy, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        // Spiral indicator
+        if (this.spiralTimer > 0) {
+            ctx.strokeStyle = `rgba(255, 80, 255, ${0.6 + Math.sin(this.flickerPhase * 4) * 0.3})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x, y, 50, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.restore();
+        if (this.alive) {
+            // Big health bar
+            ctx.fillStyle = '#222';
+            ctx.fillRect(x - 50, y - 60, 100, 8);
+            const pct = this.health / this.maxHealth;
+            ctx.fillStyle = pct > 0.5 ? '#9B00FF' : pct > 0.25 ? '#FF44FF' : '#FF0000';
+            ctx.fillRect(x - 50, y - 60, 100 * pct, 8);
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x - 50, y - 60, 100, 8);
+            ctx.fillStyle = '#FF44FF';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.name, x, y - 68);
+            if (this.phase === 2) {
+                ctx.fillStyle = '#FFAA00';
+                ctx.font = '11px Arial';
+                ctx.fillText('AWAKENED', x, y - 80);
+            } else if (this.phase === 3) {
+                ctx.fillStyle = '#FFFF44';
+                ctx.font = 'bold 11px Arial';
+                ctx.fillText('★ APOCALYPSE ★', x, y - 80);
+            }
+        }
+    }
+}

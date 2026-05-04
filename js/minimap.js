@@ -85,6 +85,10 @@ class Minimap {
             { wx: LION_DEN_ENTRANCE.x, wy: LION_DEN_ENTRANCE.y, color: '#FFAA00', label: '🦁', defeated: !!(game && game.lionDefeated) },
             { wx: OCEAN_ENTRANCE.x, wy: OCEAN_ENTRANCE.y, color: '#33CCEE', label: '🌊', defeated: false }
         ];
+        // Evan portal only appears once unlocked
+        if (game && game.evilUnlocked) {
+            markers.push({ wx: EVIL_PORTAL.x, wy: EVIL_PORTAL.y, color: '#FF44FF', label: '★', defeated: !!game.evilDefeated });
+        }
         for (const mk of markers) {
             const iso = worldToIso(mk.wx, mk.wy);
             const px = mx + (iso.x - ISO_WORLD_BOUNDS.minX) * this.isoScale;
